@@ -361,7 +361,7 @@ one meaningful commit per step).
 | `3b29740` | **Capsule character** — `physics.addCharacter` (Rapier KinematicCharacterController) + `addStaticBox` walls; the vendor bot routes locomotion through it, colliding with walls + shoving crates. |
 | `5bd8ff6` | **Input + drivable character** — `engine/input.ts` (WASD/gamepad); capsule gains gravity + jump; a "Drive (WASD/Space)" toggle drives the vendor bot via a Idle/Walk/Run/Jump FSM. |
 | `a1f13d6` | **Blend space + smooth facing** — `engine/blendSpace.ts` (1D blend tree); drive locomotion blends Idle/Walk/Run by speed (jump overlaid); facing turns smoothly toward input. |
-| _pending_ | **Dialogue + cutscene** — `engine/dialogue.ts` (Ink/inkjs wrapper: lines/choices/variables, presentation-agnostic) + `dialogueUI.ts` (DOM box) + `engine/cutscene.ts` (GSAP-backed async director). "Scene" GUI folder plays an intro: camera dollies in, runs a branching conversation, dollies back. |
+| `71f71de` | **Dialogue + cutscene** — `engine/dialogue.ts` (Ink/inkjs wrapper: lines/choices/variables, presentation-agnostic) + `dialogueUI.ts` (DOM box) + `engine/cutscene.ts` (GSAP-backed async director). "Scene" GUI folder plays an intro: camera dollies in, runs a branching conversation, dollies back. |
 
 ---
 
