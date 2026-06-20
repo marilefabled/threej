@@ -286,7 +286,7 @@ one meaningful commit per step).
 | `a50b4fd` | **Howler audio** — `engine/audio.ts` (sound registry + procedural `toneWav`); blip/swish/thud on interactions + drops; "Audio" folder (volume/mute). |
 | `ecac413` | **miniplex ECS** — `engine/ecs.ts` (World + system registry); dropped props are entities `{mesh,body,ttl}` with sync + ttl-despawn systems. |
 | `7e08714` | **Load a rigged FBX robot** — optional vendor model from an extracted Unity pack (mesh + retargeted clip via AnimationMixer); asset git-ignored. |
-| _vendor gallery_ | **Vendor robot picker** — PSD→PNG (sips) + `tools/build-vendor-manifest.mjs`; lil-gui Robot/Animation dropdowns browse the whole pack (15 robots, 275 clips), textured. See §6b. |
+| `31db3ce` | **Vendor robot gallery** — PSD→PNG (sips) + `tools/build-vendor-manifest.mjs`; lil-gui Robot/Animation dropdowns browse the whole pack (15 robots, 275 clips), textured. See §6b. |
 
 ---
 
