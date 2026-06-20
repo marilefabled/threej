@@ -1,6 +1,6 @@
 # threej
 
-An interactive Three.js robot — modular ES modules, no build step.
+A small Three.js + TypeScript engine (Vite), grown from an interactive robot demo.
 
 > **Building on this repo?** Read [`ENGINE.md`](./ENGINE.md) first — it's the living
 > doc covering architecture, the reusable engine API, the changelog, and the roadmap.
@@ -33,71 +33,42 @@ beside it, and you can change the location and time of day.
 - **Per-animation camera zoom**, orbit controls, ground glow ring, soft shadows,
   rim + fill lighting.
 
-The ghost + location graphics were ported from a sibling SvelteKit project
-(GhostJail3D) into this repo's vanilla, no-build style.
+Also: **Rapier physics** (droppable crates), **Howler audio**, and a **miniplex
+ECS** managing the props — see the lil-gui Physics/Audio folders. The ghost +
+location graphics were ported from a sibling SvelteKit project (GhostJail3D).
 
 ## Run it
 
-No dependencies to install (Three.js loads from a CDN via importmap), but it must
-be served over HTTP for ES modules to load:
-
 ```sh
-npx serve .
+npm install
+npm run dev
 ```
 
-Then open the printed `localhost` URL.
+Then open the printed `localhost` URL. (`npm run build` for production,
+`npm run typecheck` for types.)
 
 ## Project structure
 
-```
-index.html          markup + import map + <script src="src/main.js">
-styles.css          all UI styling
-src/
-  main.js           composition root — wires everything together + render loop
-  engine/           ♻ reusable Three.js scaffolding (copy into other projects)
-    scene.js          renderer · camera · OrbitControls · resize
-    lighting.js       ambient · sun (shadows) · fill · rim lights · ground bounce
-    environment.js    floor · two-layer grid · glow disc · ground ring
-    cameraZoom.js     one-shot "fly to a target, hold, return" camera move
-    bloom.js          UnrealBloom post-processing pipeline (EffectComposer)
-    loop.js           render-loop registry: onFrame(t, dt) + setRender, clamped dt
-    debugPanel.js     lil-gui panel + composable bloom/light control helpers
-    easing.js         easing helpers
-  robot/            the robot
-    robot.js          fixed skeleton + swappable part variants → posable rig + parts API
-    animations.js     the 9 pose functions + per-anim colors and zoom targets
-    themes.js         the 6 color themes + applyTheme()
-  jail/             ghost + location graphics (ported from GhostJail3D)
-    ghostMesh.js      8 procedural ghost forms + float/glow/blink animation
-    locationBuilder.js  the 9 prison locations, built from primitives
-    jailScene.js      manages the active location, ghosts, period light, GSAP
-  ui.js             button + swatch DOM wiring (no Three.js knowledge)
-```
-
-The split is deliberate: **`engine/` is generic** — drop it into a new project and
-call `createScene()` / `addLighting()` / `createBloom()` / `createLoop()` to get
-the same stage. **`robot/`** and **`jail/`** are the project-specific 3D code.
-`main.js` doesn't hand-roll a render loop; it registers `loop.onFrame((t, dt) =>
-…)` callbacks and a `loop.setRender(…)`, then `loop.start()`.
+`src/engine/` is generic, reusable scaffolding (scene, lighting, environment,
+cameraZoom, bloom, loop, assets, state, physics, audio, ecs, debugPanel); `robot/`
+and `jail/` are the project's content; `main.ts` + `ui.ts` are the glue. The full
+tree, the reusable engine API, and how to start a new project from `engine/` are
+documented in **[`ENGINE.md`](./ENGINE.md)** (the living source of truth).
 
 ### Extending it
 
-- **New animation** — add a function to `src/robot/animations.js`, a color to
-  `ANIM_COLORS`, a camera target to `ZOOM_TARGETS`, and a `<button data-anim="…">`
-  in `index.html`.
-- **New theme** — add one entry to `THEMES` in `src/robot/themes.js`; the swatch
-  UI is generated from that list.
-- **New part variant** — add a builder to the `HEAD` / `TORSO` / `ARM` / `LEG`
-  map in `src/robot/robot.js`. Keep the kinematic anchors (elbow at y=-0.45, knee
-  at y=-0.48, etc.) so animations still line up; the lil-gui dropdown picks it up
-  automatically.
-- **New location** — add a `case` to `buildLocation()` and an entry to `LOCATIONS`
-  in `src/jail/locationBuilder.js`; the dropdown is generated from that list.
-- **New ghost form** — add an entry to `FORMS` in `src/jail/ghostMesh.js`.
+- **New animation** — fn in `src/robot/animations.ts` + `ANIM_COLORS` +
+  `ZOOM_TARGETS` + a `<button data-anim="…">` in `index.html`.
+- **New theme** — one entry in `THEMES` (`src/robot/themes.ts`).
+- **New part variant** — a builder in the `HEAD`/`TORSO`/`ARM`/`LEG` maps in
+  `src/robot/robot.ts` (keep the kinematic anchors).
+- **New location / ghost form** — `LOCATIONS`+`buildLocation()` in
+  `src/jail/locationBuilder.ts` / `FORMS` in `src/jail/ghostMesh.ts`.
 
 ## Stack
 
-- [Three.js](https://threejs.org/) 0.165 + addons (CDN, native ES modules + import map)
-- [GSAP](https://gsap.com/) 3.12 (ghost entrances + transitions)
-- [lil-gui](https://lil-gui.georgealways.com/) 0.20 (debug panel)
-- Vanilla HTML/CSS/JS — no bundler, no install
+- [Three.js](https://threejs.org/) 0.165 + addons · [GSAP](https://gsap.com/) ·
+  [lil-gui](https://lil-gui.georgealways.com/) · [Rapier](https://rapier.rs/)
+  (physics) · [Howler](https://howlerjs.com/) (audio) ·
+  [miniplex](https://github.com/hmans/miniplex) (ECS)
+- [Vite](https://vitejs.dev/) + TypeScript

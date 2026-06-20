@@ -5,7 +5,7 @@
 > how this project is built and where it's going. See the *Update protocol* at the
 > bottom — keeping this current is part of every change, not an afterthought.
 
-**Last updated:** 2026-06-20 (after shareable build codes / `engine/state.js`)
+**Last updated:** 2026-06-20 (after Vite+TS migration + physics/audio/ECS)
 
 ---
 
@@ -29,9 +29,12 @@ content, or glue?"* and live in the right place.
     ghosts, locations).
   - `src/main.js` + `src/ui.js` — glue / composition root. Wires engine + content
     together; owns no reusable logic.
-- **No build step.** Native ES modules + an import map + CDN. Zero `npm install`,
-  served statically (`npx serve .`). This is a deliberate constraint — it keeps the
-  barrier to entry at zero and the engine copy-paste-portable.
+- **Vite + TypeScript.** Graduated from no-build/CDN once we added npm libs
+  (Rapier WASM) and wanted type safety. `npm install` then `npm run dev`. Imports
+  use `.js` specifiers that Vite resolves to the `.ts` files. `tsconfig` is lenient
+  to start (strict off) and tightened incrementally; `npm run typecheck` stays at 0
+  errors. (History: the project began as a single no-build HTML file — that era is
+  preserved in the early changelog.)
 - **Efficiency is a feature, not an afterthought:**
   - Clamp frame delta (no time-jumps after a backgrounded tab).
   - No per-frame allocations on the hot path (index iteration, not fresh iterators).
@@ -52,38 +55,47 @@ content, or glue?"* and live in the right place.
 ## 3. Architecture at a glance
 
 ```
-index.html            markup + import map (three, addons, gsap, lil-gui) + <script src=src/main.js>
+package.json          deps + scripts (dev/build/preview/typecheck/unpack)
+vite.config.ts        Vite config (honors PORT; excludes rapier from pre-bundle)
+tsconfig.json         TypeScript (bundler resolution, lenient)
+index.html            markup + <script type=module src=/src/main.ts>
 styles.css            all UI styling
 src/
-  main.js             composition root — builds the world, wires UI, registers frame callbacks
-  ui.js               robot button/swatch DOM wiring (no Three.js knowledge)
+  main.ts             composition root — builds the world, wires UI, registers frame callbacks
+  ui.ts               robot button/swatch DOM wiring (no Three.js knowledge)
+  types/global.d.ts   ambient globals (window.threej)
   engine/             ♻ REUSABLE — copy into any project
-    scene.js            renderer · camera · OrbitControls · resize
-    lighting.js         ambient · sun (shadows) · fill · rim lights · ground bounce
-    environment.js      floor · two-layer grid · glow disc · ground ring
-    cameraZoom.js       one-shot "fly to a target, hold, return" camera move
-    bloom.js            UnrealBloom post-processing (EffectComposer)
-    loop.js             render-loop registry: onFrame(t, dt) + setRender, clamped dt
-    assets.js           GLTF/FBX/OBJ/texture loader (deduped, lazy, skinning-safe clone)
-    state.js            URL-hash build codes: encode/decode + createUrlState
-    debugPanel.js       lil-gui panel + composable bloom/light control helpers
-    easing.js           easing helpers
+    scene.ts            renderer · camera · OrbitControls · resize
+    lighting.ts         ambient · sun (shadows) · fill · rim lights · ground bounce
+    environment.ts      floor · two-layer grid · glow disc · ground ring
+    cameraZoom.ts       one-shot "fly to a target, hold, return" camera move
+    bloom.ts            UnrealBloom post-processing (EffectComposer)
+    loop.ts             render-loop registry: onFrame(t, dt) + setRender, clamped dt
+    assets.ts           GLTF/FBX/OBJ/texture loader (deduped, lazy, skinning-safe clone)
+    state.ts            URL-hash build codes: encode/decode + createUrlState
+    physics.ts          Rapier (WASM) wrapper: world, ground, addDynamic, step+sync
+    audio.ts            Howler wrapper + procedural WAV generator (no asset files)
+    ecs.ts              miniplex World + a frame-system registry
+    debugPanel.ts       lil-gui panel + composable bloom/light control helpers
+    easing.ts           easing helpers
   robot/              the figure (content)
-    robot.js            fixed skeleton + swappable part variants → rig + parts API
-    animations.js       9 pose fns (rig, t) + ANIM_COLORS + ZOOM_TARGETS
-    themes.js           6 themes + applyTheme()
+    robot.ts            fixed skeleton + swappable part variants → rig + parts API
+    animations.ts       9 pose fns (rig, t) + ANIM_COLORS + ZOOM_TARGETS
+    themes.ts           6 themes + applyTheme()
   jail/               ghost + location graphics (ported from GhostJail3D)
-    ghostMesh.js        8 procedural ghost forms + float/glow/blink
-    locationBuilder.js  9 prison locations from primitives
-    jailScene.js        active location + ghosts + period/mood light + GSAP transitions
+    ghostMesh.ts        8 procedural ghost forms + float/glow/blink
+    locationBuilder.ts  9 prison locations from primitives
+    jailScene.ts        active location + ghosts + period/mood light + GSAP transitions
 tools/                node-side utilities (run with `node`, not in the browser)
     unpack-unitypackage.mjs  lift assets out of .unitypackage files (no Unity, no deps)
 ```
 
-**Composition flow (`main.js`):** `createScene()` → `addLighting()` /
+**Composition flow (`main.ts`):** `createScene()` → `addLighting()` /
 `addEnvironment()` → `buildRobot()` → mood light → `createBloom()` →
-`createJail()` (location + ghosts) → theme/UI wiring → `createLoop()` registers
-frame callbacks + render → `loop.start()`.
+`await createPhysics()` + `createAudio()` + `createECS()` → `createJail()` →
+theme/UI wiring → `createLoop()` registers frame callbacks + render → `loop.start()`.
+The render loop runs (in order): robot pose · ghosts · `physics.step` · `ecs.update`
+· lights · camera zoom · `bloom.render()`.
 
 ---
 
@@ -93,16 +105,19 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 
 | Module | Entry | Returns / shape |
 |---|---|---|
-| `scene.js` | `createScene({ fov, cameraPos, target, background, fog })` | `{ renderer, scene, camera, controls, BASE_CAM }` (+ wires resize) |
-| `lighting.js` | `addLighting(scene)` | `{ ambient, sun, fill, rimL, rimR, bounce }` |
-| `environment.js` | `addEnvironment(scene)` | `{ floor, gridFine, gridCoarse, glowDisc, groundRing }` |
-| `cameraZoom.js` | `createCameraZoom(camera, controls, { base, lookAt, zoomIn, hold, zoomOut })` | `{ trigger(targetVec3), update(dt, applyLookAt) }` |
-| `bloom.js` | `createBloom(renderer, scene, camera, { strength, radius, threshold })` | `{ composer, bloomPass, render(), setSize(w, h) }` |
-| `loop.js` | `createLoop(renderer, { maxDelta })` | `{ onFrame((t,dt)=>…)→disposer, setRender(fn), start, stop, elapsed, running }` |
-| `assets.js` | `createAssets({ basePath, onProgress, onLoad, onError })` | `{ loadGLTF, loadModel, loadTexture, loadAll, enableDraco, manager, clear }` |
-| `state.js` | `createUrlState({ debounce })` · `encodeState(obj)` · `decodeState(str)` | `{ read(), write(obj), encode, decode }` |
-| `debugPanel.js` | `createDebugPanel({ title, closed })` · `addBloomControls(gui, bloom, renderer)` · `addLightControls(gui, lights)` | a lil-gui `GUI` + folders |
-| `easing.js` | `easeInOut(t)` | number |
+| `scene.ts` | `createScene({ fov, cameraPos, target, background, fog })` | `{ renderer, scene, camera, controls, BASE_CAM }` (+ wires resize) |
+| `lighting.ts` | `addLighting(scene)` | `{ ambient, sun, fill, rimL, rimR, bounce }` |
+| `environment.ts` | `addEnvironment(scene)` | `{ floor, gridFine, gridCoarse, glowDisc, groundRing }` |
+| `cameraZoom.ts` | `createCameraZoom(camera, controls, { base, lookAt, zoomIn, hold, zoomOut })` | `{ trigger(targetVec3), update(dt, applyLookAt) }` |
+| `bloom.ts` | `createBloom(renderer, scene, camera, { strength, radius, threshold })` | `{ composer, bloomPass, render(), setSize(w, h) }` |
+| `loop.ts` | `createLoop(renderer, { maxDelta })` | `{ onFrame((t,dt)=>…)→disposer, setRender(fn), start, stop, elapsed, running }` |
+| `assets.ts` | `createAssets({ basePath, onProgress, onLoad, onError })` | `{ loadGLTF, loadModel, loadTexture, loadAll, enableDraco, manager, clear }` |
+| `state.ts` | `createUrlState({ debounce })` · `encodeState(obj)` · `decodeState(str)` | `{ read(), write(obj), encode, decode }` |
+| `physics.ts` | `await createPhysics({ gravity })` | `{ world, step(dt), addGround(y,half), addDynamic(mesh,shape,{link}), remove, links }` |
+| `audio.ts` | `createAudio({ volume })` · `toneWav(params)` | `{ load, tone, play, setVolume, mute, sounds, Howler }` |
+| `ecs.ts` | `createECS()` | `{ world, system(fn), update(dt, t) }` (miniplex `world`) |
+| `debugPanel.ts` | `createDebugPanel({ title, closed })` · `addBloomControls(gui, bloom, renderer)` · `addLightControls(gui, lights)` | a lil-gui `GUI` + folders |
+| `easing.ts` | `easeInOut(t)` | number |
 
 **Notes for reuse:**
 - `bloom.js`: when rendering through the composer, leave `renderer.outputColorSpace`
@@ -129,7 +144,19 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
   `read()` parses `location.hash`. In `main.js` every control calls `syncUrl()` on
   change, and `applyConfig(urlState.read())` runs once at boot. Guard re-entrancy
   with an `applying` flag so applying a code doesn't write back mid-load.
-- `debugPanel.js` helpers are composable — add only the folders a project needs,
+- `physics.ts` (Rapier): `await createPhysics()` (WASM init). `addDynamic(mesh,
+  shape, { link })` links a mesh to a body — `link:false` lets something else
+  (e.g. ECS) own the sync. `step(dt)` clamps the timestep so a stall can't explode
+  the integrator. Match `addGround(y)` to your visible floor's y.
+- `audio.ts` (Howler): a named sound registry + `toneWav()` so you can ship
+  **without audio files** (synthesize blips/thuds). `play()` needs a user gesture
+  (browser autoplay policy) — fine when triggered from clicks.
+- `ecs.ts` (miniplex): `world.add({...components})`, query with
+  `world.with('a','b')`, `system((world, dt, t) => …)`, drive with
+  `ecs.update(dt, t)` from the loop. The demo's dropped props are entities
+  `{ mesh, body, ttl }` with a sync system (mesh ← body) and a ttl despawn system.
+  Iterate a snapshot (`[...world.with('ttl')]`) when removing during iteration.
+- `debugPanel.ts` helpers are composable — add only the folders a project needs,
   or call `gui.add(...)` directly for anything bespoke.
 
 ---
@@ -154,10 +181,11 @@ These live in `robot/` and `jail/` but are templates worth copying:
 
 ## 6. How to start a new project from the engine
 
-1. Copy `src/engine/` and `styles.css` (trim as needed).
-2. Add the import map to `index.html` (three + `three/addons/` + gsap + lil-gui).
-3. In `main.js`:
-   ```js
+1. `npm create vite@latest`, then copy `src/engine/`, `styles.css`, `tsconfig.json`.
+2. `npm i three gsap lil-gui howler @dimforge/rapier3d-compat miniplex` (+ `-D
+   @types/three @types/howler @types/node`).
+3. In `main.ts`:
+   ```ts
    const { renderer, scene, camera, controls, BASE_CAM } = createScene();
    addLighting(scene); addEnvironment(scene);
    const bloom = createBloom(renderer, scene, camera);
@@ -166,7 +194,11 @@ These live in `robot/` and `jail/` but are templates worth copying:
    loop.setRender(() => bloom.render());
    loop.start();
    ```
-4. Add your own content modules alongside (your `robot/` equivalent).
+4. Add your own content modules alongside (your `robot/` equivalent), pulling in
+   `createPhysics`/`createAudio`/`createECS` as the game needs them.
+
+Run: `npm install` then `npm run dev`. (`vite.config.ts` reads `PORT` so a host
+can assign the port; it also excludes `rapier3d-compat` from the dep pre-bundle.)
 
 ---
 
@@ -201,11 +233,15 @@ materials; use the raw model + texture files.
 dev server serves the project dir, so an extracted model is reachable at e.g.
 `assets.loadModel('extracted/MyAsset/Assets/Models/Tree.fbx')`.
 
-## 7. Dependencies (all via import map, no install)
+## 7. Dependencies (npm, bundled by Vite)
 
-- **three** `0.165` + `three/addons/` (OrbitControls, postprocessing) — jsDelivr.
-- **gsap** `3.12` — esm.sh (ghost entrances + location transitions).
-- **lil-gui** `0.20` — jsDelivr (debug panel).
+- **three** `0.165` + `three/addons/*` (OrbitControls, postprocessing, loaders).
+- **gsap** `3.12` — ghost entrances + location transitions.
+- **lil-gui** `0.20` — debug panel.
+- **@dimforge/rapier3d-compat** — physics (WASM inlined; no plugin needed).
+- **howler** — audio playback.
+- **miniplex** — ECS.
+- dev: **vite**, **typescript**, **@types/three**, **@types/howler**, **@types/node**.
 
 Note: the ported `jail/` code originally targeted three `0.184`; it runs fine on
 `0.165`. If bumping three, re-verify postprocessing + addons.
@@ -230,6 +266,10 @@ one meaningful commit per step).
 | `f39777e` | **`engine/assets.js`** — Promise-based GLTF/texture loader (deduped cache, progress manager, skinning-safe clone, lazy DRACO). The doorway to real Blender/Mixamo models; wired as `window.threej.assets`. |
 | `a9afdf3` | **Unity asset pipeline** — `tools/unpack-unitypackage.mjs` (zero-dep extractor for `.unitypackage` files) + `assets.js` extended to FBX/OBJ/TGA with extension dispatch. See §6b. |
 | `fbc71a7` | **Shareable build codes** — `engine/state.js` (URL-hash encode/decode + `createUrlState`); `main.js` syncs every control to the hash and restores from it at boot; lil-gui "Copy share link". |
+| `e684cfb` | **Migrate to Vite + TypeScript** — npm toolchain; all `src/*.js`→`*.ts` (imports keep `.js` specifiers); dropped the import map; `npm run dev`/`build`/`typecheck`; `tsc` clean. |
+| `05fe0bc` | **Rapier physics** — `engine/physics.ts` (WASM world, ground, `addDynamic`, `step`+sync); "Physics" lil-gui folder drops crates/orbs that pile up. |
+| `a50b4fd` | **Howler audio** — `engine/audio.ts` (sound registry + procedural `toneWav`); blip/swish/thud on interactions + drops; "Audio" folder (volume/mute). |
+| `ecac413` | **miniplex ECS** — `engine/ecs.ts` (World + system registry); dropped props are entities `{mesh,body,ttl}` with sync + ttl-despawn systems. |
 
 ---
 
@@ -237,13 +277,19 @@ one meaningful commit per step).
 
 Loosely ordered; pick by what unblocks the most.
 
-- **GSAP timeline helpers in `engine/`** — reusable entrance/transition tweens
-  (the ghost entrance + location transition logic generalized).
-- **More content variants** — treads/jetpack/back-mounted parts; more ghost forms;
-  more locations.
-- **`engine/postfx.js` growth** — optional vignette / DOF / color-grade passes
-  alongside bloom.
-- **Perf pass** — instancing for repeated location props; frustum/draw-call audit.
+- **Wire a real rigged character** — extract a Unity/Mixamo model, load via
+  `assets.loadModel`, drive with an `AnimationMixer` on the loop (and/or a Rapier
+  capsule). The pieces are all in place now.
+- **`engine/input.ts`** — keyboard + Gamepad API (+ nipplejs for mobile), since
+  this is becoming a game engine (the LÖVE `love.keyboard/joystick` equivalent).
+- **`engine/state.ts` save/load** — generalize beyond URL hash (idb-keyval) for
+  save games.
+- **GSAP timeline helpers in `engine/`** — reusable entrance/transition tweens.
+- **`engine/postfx.ts` growth** — vignette / DOF / color-grade passes (the pmndrs
+  `postprocessing` lib is the upgrade path beyond `three/addons`).
+- **Tighten TypeScript** — replace the migration's `: any` option-bags with real
+  interfaces, module by module.
+- **Perf pass** — instancing for repeated props; frustum/draw-call audit.
 
 ---
 
