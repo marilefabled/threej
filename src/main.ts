@@ -14,6 +14,7 @@ import { createAssets } from './engine/assets.js';
 import { createUrlState } from './engine/state.js';
 import { createPhysics } from './engine/physics.js';
 import { createAudio } from './engine/audio.js';
+import { createECS } from './engine/ecs.js';
 import { createDebugPanel, addBloomControls, addLightControls } from './engine/debugPanel.js';
 
 import { buildRobot } from './robot/robot.js';
@@ -74,6 +75,25 @@ const audio = createAudio({ volume: 0.5 });
 audio.tone('blip', { freq: 620, dur: 0.07, type: 'square', decay: 26, volume: 0.4 });
 audio.tone('swish', { freq: 320, dur: 0.14, decay: 12, volume: 0.35 });
 audio.tone('thud', { freq: 110, dur: 0.2, type: 'noise', decay: 24, volume: 0.5 });
+
+// ── ECS (miniplex) — dropped props are entities; systems sync + auto-despawn ──
+const ecs = createECS();
+// sync each prop's mesh from its physics body
+ecs.system((world) => {
+  for (const e of world.with('mesh', 'body')) {
+    const t = e.body.translation(), r = e.body.rotation();
+    e.mesh.position.set(t.x, t.y, t.z);
+    e.mesh.quaternion.set(r.x, r.y, r.z, r.w);
+  }
+});
+// time-to-live: shrink out over the last 0.5s, then despawn (mesh + body + entity)
+ecs.system((world, dt) => {
+  for (const e of [...world.with('ttl')]) {
+    e.ttl -= dt;
+    if (e.ttl <= 0) { scene.remove(e.mesh); physics.remove(e.body); world.remove(e); }
+    else if (e.ttl < 0.5) e.mesh.scale.setScalar(Math.max(0.02, e.ttl / 0.5));
+  }
+});
 
 // What a theme recolors
 const themeCtx = {
@@ -182,11 +202,13 @@ function spawnProp() {
   mesh.quaternion.random();
   scene.add(mesh);
   const shape = ball ? { type: 'ball', r: s } : { type: 'box', hx: s, hy: s, hz: s };
-  physics.addDynamic(mesh, shape, { restitution: ball ? 0.55 : 0.25 });
+  // ECS owns the prop: physics body (sync + ttl handled by systems below)
+  const body = physics.addDynamic(mesh, shape, { restitution: ball ? 0.55 : 0.25, link: false });
+  ecs.world.add({ mesh, body, ttl: 9 });
   audio.play('thud', { rate: 0.85 + Math.random() * 0.4 });   // vary pitch per drop
 }
 function clearProps() {
-  for (const l of [...physics.links]) { scene.remove(l.mesh); physics.remove(l.body); }
+  for (const e of [...ecs.world.with('mesh', 'body')]) { scene.remove(e.mesh); physics.remove(e.body); ecs.world.remove(e); }
 }
 const physicsFolder = gui.addFolder('Physics');
 physicsFolder.add({ drop: () => spawnProp() }, 'drop').name('Drop one');
@@ -247,8 +269,11 @@ loop.onFrame((t, dt) => {
 // Ghosts float on continuous world time
 loop.onFrame((t) => jail.update(t));
 
-// Physics: advance the world + sync prop meshes
+// Physics: advance the world (props are synced by the ECS system below)
 loop.onFrame((t, dt) => physics.step(dt));
+
+// ECS: run systems (mesh-sync from bodies, then ttl despawn) after the step
+loop.onFrame((t, dt) => ecs.update(dt, t));
 
 // Ambient life — rim lights, bounce, ground-glow pulse
 loop.onFrame((t) => {
@@ -273,4 +298,4 @@ window.addEventListener('resize', () => {
 });
 
 // Devtools handles
-window.threej = { scene, camera, robot, jail, bloom, loop, assets, physics, audio, spawnProp, GHOST_FORMS };
+window.threej = { scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, spawnProp, GHOST_FORMS };

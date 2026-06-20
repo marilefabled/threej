@@ -21,8 +21,9 @@ export async function createPhysics({ gravity = { x: 0, y: -9.81, z: 0 } }: any 
     return body;
   }
 
-  // Link a mesh to a dynamic body spawned at the mesh's current transform.
-  function addDynamic(mesh: any, shape: any, { restitution = 0.35, friction = 0.7, density = 1 }: any = {}) {
+  // Spawn a dynamic body at the mesh's current transform. By default the mesh is
+  // linked so step() syncs it; pass link:false to sync it yourself (e.g. from ECS).
+  function addDynamic(mesh: any, shape: any, { restitution = 0.35, friction = 0.7, density = 1, link = true }: any = {}) {
     const p = mesh.position, q = mesh.quaternion;
     const body = world.createRigidBody(
       RAPIER.RigidBodyDesc.dynamic()
@@ -34,7 +35,7 @@ export async function createPhysics({ gravity = { x: 0, y: -9.81, z: 0 } }: any 
       : RAPIER.ColliderDesc.cuboid(shape.hx, shape.hy, shape.hz);
     desc.setRestitution(restitution).setFriction(friction).setDensity(density);
     world.createCollider(desc, body);
-    links.push({ body, mesh });
+    if (link) links.push({ body, mesh });
     return body;
   }
 
