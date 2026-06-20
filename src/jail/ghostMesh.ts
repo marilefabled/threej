@@ -34,7 +34,7 @@ const FORMS = {
 export const GHOST_FORMS = Object.keys(FORMS);
 
 // config: { glowColor, ghostForm, size }
-export function buildGhostGroup(config = {}) {
+export function buildGhostGroup(config: any = {}) {
   const color = new THREE.Color(config.glowColor || '#33f589');
   const scale = SIZE_SCALE[config.size ?? 'medium'];
   const group = new THREE.Group();

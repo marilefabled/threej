@@ -8,9 +8,9 @@
 // The label color is read from each button's --btn-color CSS var, so the buttons
 // in index.html stay the single source of truth for an animation's accent.
 export function setupUI({ themes, onAnim, onTheme }) {
-  const stateLabel = document.getElementById('state-label');
-  const swatchWrap = document.getElementById('swatches');
-  const btns = [...document.querySelectorAll('.btn')];
+  const stateLabel = document.getElementById('state-label') as HTMLElement;
+  const swatchWrap = document.getElementById('swatches') as HTMLElement;
+  const btns = [...document.querySelectorAll<HTMLButtonElement>('.btn')];
 
   function selectAnim(name) {
     const btn = btns.find(b => b.dataset.anim === name);

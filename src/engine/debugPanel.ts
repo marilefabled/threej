@@ -24,7 +24,7 @@ export function addBloomControls(gui, bloom, renderer) {
 }
 
 // Intensity sliders for any of the (non-animated) lights that are present
-export function addLightControls(gui, lights = {}) {
+export function addLightControls(gui, lights: any = {}) {
   const f = gui.addFolder('Lights');
   const add = (light, label, max) => {
     if (light) f.add(light, 'intensity', 0, max, 0.05).name(label).listen();

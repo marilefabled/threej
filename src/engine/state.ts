@@ -6,7 +6,7 @@
 //   const saved = urlState.read();           // {} or { anim:'dance', theme:'2', ... }
 //   urlState.write({ anim, theme, ... });    // debounced replaceState (no history spam)
 
-export function encodeState(obj) {
+export function encodeState(obj: Record<string, any>) {
   return Object.entries(obj)
     .filter(([, v]) => v !== undefined && v !== null && v !== '')
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)

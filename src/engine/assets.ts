@@ -18,7 +18,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 //   const mixer = new THREE.AnimationMixer(scene);
 //   mixer.clipAction(animations[0]).play();
 //   loop.onFrame((t, dt) => mixer.update(dt));   // engine/loop.js
-export function createAssets({ basePath = '', onProgress, onLoad, onError } = {}) {
+export function createAssets({ basePath = '', onProgress, onLoad, onError }: any = {}) {
   const manager = new THREE.LoadingManager();
   if (onProgress) manager.onProgress = (url, loaded, total) => onProgress(total ? loaded / total : 0, { url, loaded, total });
   if (onLoad) manager.onLoad = onLoad;
@@ -53,7 +53,7 @@ export function createAssets({ basePath = '', onProgress, onLoad, onError } = {}
 
   // A ready-to-add model instance: a (skinning-safe) clone with shadows on, plus
   // its animation clips. Dispatches on extension or an explicit `type`.
-  async function loadModel(u, { clone = true, shadows = true, type } = {}) {
+  async function loadModel(u, { clone = true, shadows = true, type }: any = {}) {
     const t = (type || extOf(u));
     if (t === 'glb' || t === 'gltf') {
       const gltf = await loadGLTF(u);
@@ -70,7 +70,7 @@ export function createAssets({ basePath = '', onProgress, onLoad, onError } = {}
     throw new Error(`[assets] unsupported model type "${t}" for ${u}`);
   }
 
-  function loadTexture(u, { colorSpace = THREE.SRGBColorSpace, flipY, type } = {}) {
+  function loadTexture(u, { colorSpace = THREE.SRGBColorSpace, flipY, type }: any = {}) {
     const t = (type || extOf(u));
     return cached('tex:' + u, async () => {
       const loader = t === 'tga' ? await tga() : texLoader;
@@ -83,9 +83,9 @@ export function createAssets({ basePath = '', onProgress, onLoad, onError } = {}
 
   // Batch load { key: 'file.glb' | 'file.png' } → { key: asset }. Type detected by
   // extension (textures vs models).
-  async function loadAll(map) {
+  async function loadAll(map: Record<string, string>) {
     const texExt = /\.(png|jpe?g|webp|avif|ktx2|tga|bmp|gif|hdr|exr|tiff?)$/i;
-    const out = {};
+    const out: Record<string, any> = {};
     await Promise.all(Object.entries(map).map(async ([k, u]) => {
       out[k] = texExt.test(u) ? await loadTexture(u) : await loadModel(u);
     }));

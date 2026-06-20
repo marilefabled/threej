@@ -99,7 +99,7 @@ const ui = setupUI({
 });
 
 // ── Jail UI (location + period + mood + ghost) ──
-const locationSelect = document.getElementById('location-select');
+const locationSelect = document.getElementById('location-select') as HTMLSelectElement;
 LOCATIONS.forEach(loc => {
   const opt = document.createElement('option');
   opt.value = loc.id;
@@ -109,14 +109,14 @@ LOCATIONS.forEach(loc => {
 locationSelect.value = 'cell_block_a';
 locationSelect.addEventListener('change', () => { jail.setLocation(locationSelect.value); syncUrl(); });
 
-const periodSelect = document.getElementById('period-select');
+const periodSelect = document.getElementById('period-select') as HTMLSelectElement;
 periodSelect.addEventListener('change', () => { jail.setPeriod(periodSelect.value); syncUrl(); });
 
-const moodSelect = document.getElementById('mood-select');
+const moodSelect = document.getElementById('mood-select') as HTMLSelectElement;
 moodSelect.addEventListener('change', () => { jail.setMood(moodSelect.value); syncUrl(); });
 
 // Ghost-form picker drives the primary (front) ghost
-const ghostSelect = document.getElementById('ghost-select');
+const ghostSelect = document.getElementById('ghost-select') as HTMLSelectElement;
 GHOST_FORMS.forEach(form => {
   const opt = document.createElement('option');
   opt.value = form;
@@ -134,12 +134,12 @@ addLightControls(gui, { ...lights, moodLight });
 // Robot part variations — a dropdown per part + a randomizer
 const partsFolder = gui.addFolder('Robot Parts');
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
-const partState = { ...robot.parts.current };
-['head', 'torso', 'arms', 'legs'].forEach(part => {
-  const opts = {};
-  robot.parts.options[part].forEach(name => { opts[cap(name)] = name; });
+const partState: any = { ...robot.parts.current };
+(['head', 'torso', 'arms', 'legs'] as const).forEach(part => {
+  const opts: Record<string, string> = {};
+  robot.parts.options[part].forEach((name: string) => { opts[cap(name)] = name; });
   partsFolder.add(partState, part, opts).name(cap(part))
-    .onChange(v => { robot.parts.set(part, v); syncUrl(); }).listen();
+    .onChange((v: string) => { robot.parts.set(part, v); syncUrl(); }).listen();
 });
 partState.randomize = () => { Object.assign(partState, robot.parts.randomize()); syncUrl(); };
 partsFolder.add(partState, 'randomize').name('Randomize');

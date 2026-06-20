@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>ThreeJS Figure</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
 
@@ -57,18 +57,6 @@
   </div>
 </div>
 
-<!-- Import map must come before any module that imports "three" -->
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/",
-    "gsap": "https://esm.sh/gsap@3.12.5",
-    "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.20/dist/lil-gui.esm.min.js"
-  }
-}
-</script>
-
-<script type="module" src="src/main.js"></script>
+<script type="module" src="/src/main.ts"></script>
 </body>
 </html>

@@ -27,7 +27,7 @@ function hexToRGB(hex) {
 // Manages the jail "stage" inside an existing scene: current location geometry,
 // the floating ghosts, period/mood lighting, and GSAP transitions.
 //   createJail(scene, { moodLight, renderer, getBloomPass })
-export function createJail(scene, { moodLight, renderer, getBloomPass } = {}) {
+export function createJail(scene, { moodLight, renderer, getBloomPass }: any = {}) {
   const locationGroup = new THREE.Group();
   scene.add(locationGroup);
 

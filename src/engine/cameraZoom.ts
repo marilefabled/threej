@@ -17,7 +17,7 @@ export function createCameraZoom(camera, controls, {
   zoomIn = 0.45,
   hold = 0.9,
   zoomOut = 0.5,
-} = {}) {
+}: any = {}) {
   const total = zoomIn + hold + zoomOut;
   const from = base.clone();
   const to = base.clone();
