@@ -31,6 +31,9 @@ import { createDirector } from './engine/cutscene.js';
 import { createTrigger } from './engine/trigger.js';
 import { createDialogueUI } from './dialogueUI.js';
 import { createSceneManager } from './engine/sceneManager.js';
+import { createEvents } from './engine/events.js';
+import { createTimers } from './engine/timer.js';
+import { createShake } from './engine/shake.js';
 import { createDebugPanel, addBloomControls, addLightControls } from './engine/debugPanel.js';
 
 import { buildRobot } from './robot/robot.js';
@@ -132,6 +135,23 @@ const zoom = createCameraZoom(camera, controls, {
 
 // Shared particle system — footstep/jump/land dust + GUI sparkle bursts.
 const vfx = createParticles(scene, { max: 700, gravity: new THREE.Vector3(0, -2.6, 0), drag: 0.5 });
+
+// ── Events (pub/sub) ── type-safe game event bus; wire systems without coupling them.
+// Define your game's event schema below and share this object across scenes.
+type GameEvents = {
+  'level:change': { name: string }
+  'npc:talk':     { knot: string }
+  'player:jump':  void
+  'player:land':  void
+}
+const events = createEvents<GameEvents>();
+
+// ── Timers ── game-loop-integrated; auto-pause when the loop stops.
+const timer = createTimers();
+
+// ── Camera shake ── trauma model: addTrauma(0..1), decays over time.
+// update() is called LAST in the camera frame callback so it offsets on top.
+const shake = createShake(camera, { maxOffset: 0.18, maxRoll: 0.05, traumaDecay: 1.5 });
 
 // HUD: a stamina meter (drive) + a world-anchored nameplate over the driven robot.
 const hud = createHUD(camera);
@@ -403,6 +423,15 @@ sceneFolder.add({ title: () => scenes.go('title') }, 'title').name('↩ Main men
 const vfxFolder = gui.addFolder('VFX');
 vfxFolder.add({ sparkle: () => vfx.burst(new THREE.Vector3(0, 1.1, 0), 40, { speed: 3, spread: 0.5, up: 1.5, life: 0.9, lifeVar: 0.4, size: 0.22, color: 0x9fd0ff }) }, 'sparkle').name('Sparkle burst');
 vfxFolder.add({ poof: () => vfx.burst(new THREE.Vector3(0, 0.1, 0), 28, { speed: 2.2, spread: 1.2, up: 0.2, life: 0.5, size: 0.22, color: 0xd8c3a0 }) }, 'poof').name('Ground poof');
+vfxFolder.add({ shakeLight:  () => shake.addTrauma(0.3) },  'shakeLight').name('Shake light');
+vfxFolder.add({ shakeMedium: () => shake.addTrauma(0.6) }, 'shakeMedium').name('Shake medium');
+vfxFolder.add({ shakeHeavy:  () => shake.addTrauma(1.0) },  'shakeHeavy').name('Shake heavy');
+// Timer demo: three escalating shakes staggered 0.5 s apart (shows timer.after).
+vfxFolder.add({ timerDemo: () => {
+  timer.after(0.0, () => shake.addTrauma(0.3));
+  timer.after(0.5, () => shake.addTrauma(0.5));
+  timer.after(1.0, () => shake.addTrauma(0.8));
+}}, 'timerDemo').name('Timer: escalating shakes');
 
 // ── Data-driven levels (engine/level.ts spawns from LEVELS data) ──
 const levelLoader = createLevelLoader(scene, {
@@ -421,11 +450,15 @@ const levelLoader = createLevelLoader(scene, {
     if (edge === 'enter' && t.dialogue && !dialogue.active && !director.active) dialogue.run(t.dialogue);
   },
 });
+// Level-change event: any system can react without knowing about the level loader.
+events.on('level:change', ({ name }) => { console.info('[events] level →', name); });
+
 const levelState = { level: 'none' };
 function loadLevel(key: string) {
   const data = LEVELS[key] ?? LEVELS.none;
   levelLoader.load(data);
   levelState.level = key;
+  events.emit('level:change', { name: key });
   if (vendorChar && data.spawn) {                       // drop the driven character at the spawn point
     vendorChar.teleport(data.spawn.x, data.spawn.z);
     if (vendorModel) vendorModel.rotation.y = data.spawn.yaw ?? 0;
@@ -440,10 +473,11 @@ const levelCtrl = levelFolder.add(levelState, 'level',
 // ── Save / Load (engine/save.ts → localStorage) ──
 const saveToast = hud.text({ anchor: 'top-center', y: 70, className: 'hud-text hud-toast' });
 saveToast.hide();
-let toastTimer: any = null;
+let toastHandle: ReturnType<typeof timer.after> | null = null;
 function toast(msg: string) {
   saveToast.set(msg); saveToast.show();
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => saveToast.hide(), 1400);
+  toastHandle?.cancel();
+  toastHandle = timer.after(1.4, () => saveToast.hide());  // game-loop timer, auto-pauses
 }
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const saves = createSaveSystem({
@@ -505,12 +539,17 @@ loop.onFrame((t) => {
   env.glowDisc.material.opacity = 0.1 + Math.sin(t * 1.5) * 0.04;
 });
 
-// Camera: cutscene director > follow cam > one-shot zoom (mutually exclusive owners)
+// Camera: cutscene director > follow cam > one-shot zoom (mutually exclusive owners).
+// Shake runs last — always after the camera is positioned for this frame.
 loop.onFrame((t, dt) => {
   if (director.active) return;                         // a cutscene owns the camera
-  if (followCam?.enabled) { followCam.update(dt); return; }   // third-person follow
-  zoom.update(dt, curAnim !== 'spin');                 // default: free orbit + anim fly-ins
+  if (followCam?.enabled) followCam.update(dt);        // third-person follow
+  else zoom.update(dt, curAnim !== 'spin');             // default: free orbit + anim fly-ins
+  shake.update(dt);                                    // offset on top, every non-cutscene frame
 });
+
+// Game-loop timers (after, every, tween) — must tick each frame.
+loop.onFrame((_, dt) => timer.update(dt));
 
 // Scene manager: route update to the active scene each frame
 loop.onFrame((t, dt) => scenes.update(dt, t));
@@ -529,7 +568,7 @@ window.addEventListener('resize', () => {
 });
 
 // Devtools handles
-window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, dialogue, director, playIntro, npcTrigger, vfx, levelLoader, loadLevel, hud, saves, scenes, getCurAnim: () => curAnim, spawnProp, GHOST_FORMS, createStateMachine };
+window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, dialogue, director, playIntro, npcTrigger, vfx, levelLoader, loadLevel, hud, saves, scenes, events, timer, shake, getCurAnim: () => curAnim, spawnProp, GHOST_FORMS, createStateMachine };
 
 // ── Vendor robot gallery: browse an extracted Unity pack (git-ignored) via
 // public/vendor/manifest.json (see tools/build-vendor-manifest.mjs). The packs
@@ -622,10 +661,16 @@ async function loadVendorRobot(entry: any) {
         d = Math.atan2(Math.sin(d), Math.cos(d));          // shortest path around the circle
         model.rotation.y += d * Math.min(1, dt * 12);
       }
-      // ── Dust VFX: kick up at the feet on jump, landing, and footfalls ──
+      // ── Dust VFX + shake: kick up at the feet on jump, landing, and footfalls ──
       const feet = { x: model.position.x, y: model.position.y + 0.05, z: model.position.z };
-      if (jumped && vendorWasGrounded) vfx.burst(feet, 14, { speed: 1.6, spread: 0.7, up: 0.5, life: 0.5, size: 0.16, color: 0xcdd8ff });
-      if (r.grounded && !vendorWasGrounded) vfx.burst(feet, 20, { speed: 2.2, spread: 1.1, up: 0.12, life: 0.45, size: 0.2, color: 0xe0e8ff });
+      if (jumped && vendorWasGrounded) {
+        vfx.burst(feet, 14, { speed: 1.6, spread: 0.7, up: 0.5, life: 0.5, size: 0.16, color: 0xcdd8ff });
+        shake.addTrauma(0.18); events.emit('player:jump');
+      }
+      if (r.grounded && !vendorWasGrounded) {
+        vfx.burst(feet, 20, { speed: 2.2, spread: 1.1, up: 0.12, life: 0.45, size: 0.2, color: 0xe0e8ff });
+        shake.addTrauma(0.3); events.emit('player:land');
+      }
       else if (r.grounded && a.len > 0.2) vfx.stream(feet, dt, a.len * (running ? 22 : 12), { speed: 0.5, spread: 0.5, up: 0.25, life: 0.45, size: 0.12, color: 0xc9b79a });
       vendorWasGrounded = r.grounded;
       // Blend Idle↔Walk↔Run by speed; overlay the jump clip while airborne.

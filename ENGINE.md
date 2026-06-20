@@ -5,7 +5,7 @@
 > how this project is built and where it's going. See the *Update protocol* at the
 > bottom — keeping this current is part of every change, not an afterthought.
 
-**Last updated:** 2026-06-20 (after scene manager)
+**Last updated:** 2026-06-20 (after events / timer / shake)
 
 ---
 
@@ -91,6 +91,9 @@ src/
     cutscene.ts         GSAP-backed director: async script of awaitable engine actions
     trigger.ts          flat (XZ) volume zone: update(point) fires onEnter/onExit
     sceneManager.ts     named scenes + cross-fade transitions; boot-reveal + go(name)
+    events.ts           typed pub/sub bus: on/once/off/emit/clear/count
+    timer.ts            game-loop timers: after/every/tween; pauses with the loop
+    shake.ts            trauma-model camera shake: addTrauma(0..1), decays each frame
     debugPanel.ts       lil-gui panel + composable bloom/light control helpers
     easing.ts           easing helpers
   robot/              the figure (content)
@@ -147,6 +150,9 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 | `cutscene.ts` | `createDirector(extras)` | `{ play(asyncScript), skip(), cx, active }` |
 | `trigger.ts` | `createTrigger({ position, radius, once, onEnter, onExit })` | `{ update(point), reset(), inside, position, radius }` |
 | `sceneManager.ts` | `createSceneManager({ transition: { duration, color } })` | `{ register(name, def), go(name, opts?), update(dt,t), dispose(), current, busy }` |
+| `events.ts` | `createEvents<Schema>()` | `{ on(name, fn)→unsub, once(name, fn)→unsub, off(name, fn), emit(name, payload?), clear(name?), count(name?) }` |
+| `timer.ts` | `createTimers()` | `{ after(s, fn)→handle, every(s, fn, {times?})→handle, tween(s, fn(p), {ease?,onComplete?})→handle, cancel(h), cancelAll(), update(dt), pending }` |
+| `shake.ts` | `createShake(camera, { maxOffset, maxRoll, traumaDecay })` | `{ addTrauma(amount), update(dt), reset(), trauma, enabled }` |
 | `debugPanel.ts` | `createDebugPanel({ title, closed })` · `addBloomControls(gui, bloom, renderer)` · `addLightControls(gui, lights)` | a lil-gui `GUI` + folders |
 | `easing.ts` | `easeInOut(t)` | number |
 
@@ -291,6 +297,35 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
   `ecs.update(dt, t)` from the loop. The demo's dropped props are entities
   `{ mesh, body, ttl }` with a sync system (mesh ← body) and a ttl despawn system.
   Iterate a snapshot (`[...world.with('ttl')]`) when removing during iteration.
+- `events.ts`: a typed pub/sub bus. Define an event schema for your game —
+  `type GameEvents = { 'player:died': { score: number }; 'level:change': { name: string } }`
+  — then `createEvents<GameEvents>()` gives fully typed `emit`/`on`/`once`. Without
+  the generic, payloads are `any`. `on()` returns an unsubscribe function (no string
+  token needed). Handlers that throw are caught and logged so they don't block other
+  listeners. `once()` is self-removing, race-safe (fires at most once even under
+  concurrent calls). Use this to decouple scenes, systems, and UI: the HUD listens
+  for `'player:died'` without knowing about the physics system; the scene manager
+  listens for `'level:complete'` without knowing about the game loop.
+- `timer.ts`: game-loop-integrated timers that run on the loop's accumulated `dt`.
+  Unlike `setTimeout` or GSAP, they pause automatically when the loop stops (tab
+  hidden, scene paused). `after(s, fn)` fires once; `every(s, fn, { times })` fires
+  repeatedly (forever or N times); `tween(s, fn(progress), { ease, onComplete })`
+  drives a 0→1 progress value over `s` seconds — wire it to a health bar, fade,
+  or lerp. Every call returns a `{ cancel(), active }` handle. The `while`-loop in
+  `every` handles large `dt` spikes (fires each missed interval) without exploding,
+  thanks to `loop.ts` clamping dt at 0.1 s. Pairs naturally with `events` and
+  `shake` (`timer.after(0.5, () => shake.addTrauma(0.6))`). Used in the demo to
+  drive the HUD save toast and the "escalating shakes" VFX demo.
+- `shake.ts`: trauma-model camera shake (Jan Bitters, *Game Feel*). `addTrauma(0..1)`
+  accumulates; multiple hits sum naturally (capped at 1). Each frame trauma decays at
+  `traumaDecay` units/sec; the actual displacement is `trauma²` (squared = punchy
+  onset, fast trailing-off). Offset is applied in camera-local space (right + up axes
+  via `camera.quaternion`, zero per-frame allocation), plus a roll offset on
+  `camera.rotation.z`. Since `lookAt` resets roll to ~0 each frame, roll accumulation
+  naturally clears. **Call `shake.update(dt)` LAST** in your camera frame callback —
+  after OrbitControls / followCam / zoom have positioned the camera. `reset()` zeros
+  trauma instantly (use on scene transitions so shake doesn't carry across). Trauma
+  guide: 0.15–0.25 subtle · 0.3–0.45 medium · 0.5–0.7 strong · 0.75–1.0 maximum.
 - `sceneManager.ts`: named scenes with async lifecycle hooks — `enter(prev)`,
   `update(dt, t)`, `exit(next)`. `go(name)` cross-fades: a full-screen DOM overlay
   fades to the transition color (default `#000`), the outgoing `exit` runs, the
@@ -450,6 +485,7 @@ one meaningful commit per step).
 | `d9cb2c1` | **Follow camera** — `engine/followCamera.ts`, a damped third-person cam that trails a target and swings behind it. Camera owners are now a strict hierarchy (director > follow > zoom/orbit); the vendor "Follow cam (3rd person)" toggle auto-enables with Drive for a real game feel. |
 | `36f1a0b` | **Talk prompt** — the NPC zone no longer auto-starts; standing in it brightens the ring and shows a "press E to talk" prompt (`#talk-prompt`), and E starts the conversation. Prompt hides while talking / on exit / when drive stops. |
 | TBD | **Scene manager** — `engine/sceneManager.ts` (`createSceneManager`): named scenes `{ enter, update, exit }` + cross-fade transitions (DOM overlay, configurable color/duration). Overlay starts opaque for a "boot reveal"; first `go()` enters and fades out; subsequent calls fade dark → swap → reveal. Demo: `title` scene (full-screen THREEJ card, Enter/click → game) + `game` scene (existing content). GUI "↩ Main menu" + `window.threej.scenes`. |
+| TBD | **Events / Timer / Camera shake** — three universal boilerplate modules. `engine/events.ts` (`createEvents<Schema>`): typed pub/sub bus; `on/once/off/emit/clear/count`; handler errors isolated per listener; `on()` returns an unsubscribe fn. `engine/timer.ts` (`createTimers`): loop-dt-based `after/every/tween` timers (pause with the loop; `every` handles large-dt missed intervals; `tween` drives a 0→1 progress with optional easing). `engine/shake.ts` (`createShake`): trauma-model camera shake (`addTrauma`, decays per frame at `trauma²` magnitude, camera-local right/up/roll offset, call LAST in camera callback). Demo: jump/land emit `player:jump`/`player:land` + add trauma; VFX folder has Shake light/medium/heavy + a "Timer: escalating shakes" button; `loadLevel` emits `level:change`; save toast uses `timer.after` instead of `setTimeout`. All three on `window.threej`. |
 
 ---
 
@@ -457,14 +493,14 @@ one meaningful commit per step).
 
 Loosely ordered; pick by what unblocks the most.
 
-- **`engine/postfx.ts` growth** — vignette, camera shake, color-grade passes. Low
-  effort, huge feel upgrade; the pmndrs `postprocessing` lib is the upgrade path
-  beyond `three/addons`. Camera shake is especially high-value for combat feedback.
-- **Spatial audio** — Howler has built-in positional audio; just wire
-  `audio.setListener(camera)` + `play3D(name, worldPos)`. Makes ambient scenes feel
-  alive.
-- **Scene content helpers** — utilities for actually building game screens (title
-  menu items, pause screen, game-over screen) using the new scene manager.
+- **`engine/postfx.ts` growth** — vignette + color-grade passes. The pmndrs
+  `postprocessing` lib is the upgrade path beyond `three/addons`.
+- **Spatial/3D audio** — Howler has built-in positional audio; wire
+  `audio.setListener(camera)` + `play3D(name, worldPos)`. Makes ambient scenes alive.
+- **`engine/pool.ts`** — generic object pool (`acquire`/`release`). Zero-GC for
+  bullets, enemies, and effects that spawn/despawn at high rate.
+- **`engine/raycast.ts`** — click-on-3D wrapper around `THREE.Raycaster`:
+  `pick(mouseEvent, [objects])` → `{ object, point, distance }`.
 - **GSAP timeline helpers in `engine/`** — reusable entrance/transition tweens.
 - **Tighten TypeScript** — replace the migration's `: any` option-bags with real
   interfaces, module by module.
