@@ -11,6 +11,7 @@ import { createCameraZoom } from './engine/cameraZoom.js';
 import { createFollowCamera } from './engine/followCamera.js';
 import { createParticles } from './engine/particles.js';
 import { createLevelLoader } from './engine/level.js';
+import { createHUD } from './engine/hud.js';
 import { LEVELS } from './levels.js';
 import { createBloom } from './engine/bloom.js';
 import { createLoop } from './engine/loop.js';
@@ -129,6 +130,13 @@ const zoom = createCameraZoom(camera, controls, {
 
 // Shared particle system — footstep/jump/land dust + GUI sparkle bursts.
 const vfx = createParticles(scene, { max: 700, gravity: new THREE.Vector3(0, -2.6, 0), drag: 0.5 });
+
+// HUD: a stamina meter (drive) + a world-anchored nameplate over the driven robot.
+const hud = createHUD(camera);
+const staminaBar = hud.bar({ anchor: 'bottom-left', x: 20, y: 120, width: 190, label: 'Stamina', color: '#7fe0a0' });
+staminaBar.hide();
+const nameplate = hud.marker(new THREE.Vector3(0, 0, 0), { html: 'UNIT-07', offsetY: 2.1 });
+nameplate.hide();
 
 // ── State ──
 let curAnim = 'idle';
@@ -423,6 +431,13 @@ loop.onFrame((t, dt) => physics.step(dt));
 // Particles: integrate + fade dust/sparks
 loop.onFrame((t, dt) => vfx.update(dt));
 
+// HUD: pin the nameplate over the vendor robot, then project all world markers
+loop.onFrame(() => {
+  if (vendorModel) { nameplate.show(); nameplate.setTarget(vendorModel.position); }
+  else nameplate.hide();
+  hud.update();
+});
+
 // ECS: run systems (mesh-sync from bodies, then ttl despawn) after the step
 loop.onFrame((t, dt) => ecs.update(dt, t));
 
@@ -453,7 +468,7 @@ window.addEventListener('resize', () => {
 });
 
 // Devtools handles
-window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, dialogue, director, playIntro, npcTrigger, vfx, levelLoader, loadLevel, getCurAnim: () => curAnim, spawnProp, GHOST_FORMS, createStateMachine };
+window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, dialogue, director, playIntro, npcTrigger, vfx, levelLoader, loadLevel, hud, getCurAnim: () => curAnim, spawnProp, GHOST_FORMS, createStateMachine };
 
 // ── Vendor robot gallery: browse an extracted Unity pack (git-ignored) via
 // public/vendor/manifest.json (see tools/build-vendor-manifest.mjs). The packs
@@ -478,6 +493,7 @@ let vendorBlend: any = null;       // drive locomotion blend (Idle/Walk/Run by s
 let vendorJumpAction: any = null;  // jump clip, overlaid on the blend when airborne
 let vendorJumpW = 0;               // jump overlay weight (smoothed)
 let vendorWasGrounded = true;      // for landing-puff edge detection
+let vendorStamina = 1;             // sprint fuel (0..1), HUD-tracked
 const input = createInput();
 
 // Load a robot mesh: textured material, normalized scale, animator + the loop
@@ -529,7 +545,13 @@ async function loadVendorRobot(entry: any) {
       if (canTalk && input.consume('KeyE')) { talkPrompt.hidden = true; dialogue.run('yard_npc'); }
       if (dialogue.active || director.active) { vendorBlend?.set(0); return; }  // hold still while talking
       const a = input.axis();
-      const running = input.down('ShiftLeft') || input.down('ShiftRight');
+      // Sprint draws down stamina; it regenerates when you're not sprinting.
+      const wantRun = input.down('ShiftLeft') || input.down('ShiftRight');
+      const running = wantRun && vendorStamina > 0.05 && a.len > 0.1;
+      vendorStamina = running ? Math.max(0, vendorStamina - dt * 0.45) : Math.min(1, vendorStamina + dt * 0.3);
+      staminaBar.show();
+      staminaBar.set(vendorStamina);
+      staminaBar.color(vendorStamina < 0.25 ? '#ff6a6a' : '#7fe0a0');
       const sp = a.len * (running ? 5.5 : 3.0);
       const jumped = input.consume('Space');
       if (jumped) vendorChar.jump();
@@ -649,7 +671,7 @@ async function setVendorClip(entry: any, name: string) {
     if (vendorJumpAction) { vendorJumpAction.enabled = true; vendorJumpAction.setEffectiveWeight(0); vendorJumpAction.play(); }
     vendorJumpW = 0;
   }
-  function stopDrive() { vendorBlend = null; vendorJumpAction = null; vendorAnimator?.mixer.stopAllAction(); talkPrompt.hidden = true; }
+  function stopDrive() { vendorBlend = null; vendorJumpAction = null; vendorAnimator?.mixer.stopAllAction(); talkPrompt.hidden = true; staminaBar.hide(); }
 
   const folder = gui.addFolder('Vendor Robot');
   folder.add(pick, 'robot', names).name('Robot').onChange(async () => {
