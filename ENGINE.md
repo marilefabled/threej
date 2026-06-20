@@ -312,6 +312,7 @@ one meaningful commit per step).
 | `31db3ce` | **Vendor robot gallery** — PSD→PNG (sips) + `tools/build-vendor-manifest.mjs`; lil-gui Robot/Animation dropdowns browse the whole pack (15 robots, 275 clips), textured. See §6b. |
 | `7e2c8d5` | **Crossfade animator** — `engine/animator.ts` (named clips + `play(name, {fade})`); vendor Animation dropdown crossfades on the same model; walk/run clips drive a locomotion path. |
 | `76ef87a` | **Root motion** — `engine/rootMotion.ts` extracts root-bone displacement (unit-independent, loop-safe) → the animation walks the character; vendor "Root motion" toggle for `W Root` clips. |
+| `23e272b` | **State machine** — `engine/stateMachine.ts` (states + transitions); vendor "Wander (AI)" toggle runs an Idle↔Walk FSM driving the animator. |
 
 ---
 
