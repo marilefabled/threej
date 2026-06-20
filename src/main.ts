@@ -72,6 +72,11 @@ jail.setMood('neutral');
 // ── Physics (Rapier) — a floor + droppable crates that pile up in the cell ──
 const physics = await createPhysics();
 physics.addGround(0);                                    // matches the jail floor at y=0
+// Cell walls (cell_block_a is 8 wide x 10 deep) so the capsule character stays in.
+physics.addStaticBox(0.1, 2, 5, 4, 2, 0);
+physics.addStaticBox(0.1, 2, 5, -4, 2, 0);
+physics.addStaticBox(4, 2, 0.1, 0, 2, 5);
+physics.addStaticBox(4, 2, 0.1, 0, 2, -5);
 
 // ── Audio (Howler) — procedurally-synthesized blips/thuds, no asset files ──
 const audio = createAudio({ volume: 0.5 });
@@ -311,6 +316,7 @@ window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physic
 let vendorModel: any = null;
 let vendorAnimator: any = null;
 let vendorRoot: any = null;   // root-motion extractor for the current model
+let vendorChar: any = null;   // Rapier capsule character (move-and-slide)
 let vendorDispose: (() => void) | null = null;
 let vendorClip = '';          // current clip name (drives locomotion)
 let vendorGroundY = 0;        // feet-on-floor y for the current model
@@ -325,6 +331,7 @@ let vendorWander: any = null;   // wander state machine (built per robot when en
 // hooks (animator update + locomotion). Reused on robot change.
 async function loadVendorRobot(entry: any) {
   if (vendorDispose) { vendorDispose(); vendorDispose = null; }
+  if (vendorChar) { vendorChar.dispose(); vendorChar = null; }
   if (vendorModel) { scene.remove(vendorModel); vendorModel = null; vendorAnimator = null; }
 
   const { scene: model } = await assets.loadModel(encodeURI(entry.mesh), { type: 'fbx' });
@@ -349,36 +356,33 @@ async function loadVendorRobot(entry: any) {
   scene.add(model);
   vendorModel = model;
   vendorAnimator = createAnimator(model);
-  vendorRoot = createRootMotion(model, { getTime: () => vendorAnimator.currentAction?.time ?? 0 });
+  // root motion fills its `delta` but doesn't move the model — the capsule does.
+  vendorRoot = createRootMotion(model, { getTime: () => vendorAnimator.currentAction?.time ?? 0, applyToTarget: false });
+  vendorChar = physics.addCharacter(model, { radius: 0.4, half: 0.5 });
   vendorHome.set(vendorCenter.x, vendorGroundY, vendorCenter.y + WALK_R);
   window.threej.vendorRobot = model;
 
   vendorDispose = loop.onFrame((_t, dt) => {
     vendorAnimator.update(dt);
+    if (vendorOpts.wander && vendorWander) vendorWander.update(dt);   // AI picks clips
 
-    // AI: a wander state machine picks Idle/Walk clips on timers (it sets vendorClip
-    // via setVendorClip; the movement below responds).
-    if (vendorOpts.wander && vendorWander) vendorWander.update(dt);
-
-    // Root motion: a "W Root" clip carries forward displacement on the root bone;
-    // extract it so the animation itself walks the robot. Re-home if it wanders off.
+    // Compute this frame's desired horizontal step from the active clip...
+    let dx = 0, dz = 0;
     if (vendorOpts.rootMotion && /w root/i.test(vendorClip)) {
-      vendorRoot.apply();
-      model.position.y = vendorGroundY;
-      if (model.position.distanceTo(vendorHome) > 3) { model.position.copy(vendorHome); vendorRoot.reset(); }
-      return;
-    }
-    // Otherwise: scripted circular wander for walk/run, in place for everything else.
-    if (/walk|run/i.test(vendorClip)) {
+      const d = vendorRoot.apply();                        // animation-driven
+      dx = d.x; dz = d.z;
+    } else if (/walk|run/i.test(vendorClip)) {             // scripted circular wander
       const speed = /run/i.test(vendorClip) ? 1.3 : 0.65;
       walkAngle += (speed / WALK_R) * dt;
-      model.position.set(
-        vendorCenter.x + Math.sin(walkAngle) * WALK_R,
-        vendorGroundY,
-        vendorCenter.y + Math.cos(walkAngle) * WALK_R,
-      );
-      model.rotation.y = walkAngle + Math.PI / 2;   // face along the path
+      dx = vendorCenter.x + Math.sin(walkAngle) * WALK_R - model.position.x;
+      dz = vendorCenter.y + Math.cos(walkAngle) * WALK_R - model.position.z;
+      model.rotation.y = walkAngle + Math.PI / 2;          // face along the path
     }
+
+    // ...then route it through the capsule (collides with walls, shoves crates).
+    vendorChar.move(dx, dz);
+    model.position.y = vendorGroundY;
+    if (model.position.distanceTo(vendorHome) > 3) { vendorChar.teleport(vendorHome.x, vendorHome.z); vendorRoot.reset(); }
   });
 }
 
@@ -395,7 +399,7 @@ async function setVendorClip(entry: any, name: string) {
   vendorClip = info.name;
   vendorAnimator.play(info.name, { fade: 0.35 });
   vendorRoot?.reset();          // re-prime root motion for the new clip
-  if (vendorModel) vendorModel.position.copy(vendorHome);   // start each clip from home
+  vendorChar?.teleport(vendorHome.x, vendorHome.z);   // start each clip from home
 }
 
 (async () => {
@@ -435,7 +439,7 @@ async function setVendorClip(entry: any, name: string) {
   let animCtrl = folder.add(pick, 'animation', animsFor(pick.robot)).name('Animation')
     .onChange(() => setVendorClip(entryFor(pick.robot), pick.animation));
   folder.add(vendorOpts, 'rootMotion').name('Root motion (W Root clips)')
-    .onChange(() => { vendorRoot?.reset(); if (vendorModel) vendorModel.position.copy(vendorHome); });
+    .onChange(() => { vendorRoot?.reset(); vendorChar?.teleport(vendorHome.x, vendorHome.z); });
   folder.add(vendorOpts, 'wander').name('Wander (AI)')
     .onChange(() => { vendorWander = vendorOpts.wander ? buildWander() : null; if (!vendorOpts.wander) setVendorClip(entryFor(pick.robot), pick.animation); });
 
@@ -443,8 +447,9 @@ async function setVendorClip(entry: any, name: string) {
   await setVendorClip(entryFor(pick.robot), pick.animation);
   // dev/test hooks
   window.threej.vendorSetClip = (n: string) => setVendorClip(entryFor(pick.robot), n);
-  window.threej.vendorRootMotion = (on: boolean) => { vendorOpts.rootMotion = on; vendorRoot?.reset(); if (vendorModel) vendorModel.position.copy(vendorHome); };
+  window.threej.vendorRootMotion = (on: boolean) => { vendorOpts.rootMotion = on; vendorRoot?.reset(); vendorChar?.teleport(vendorHome.x, vendorHome.z); };
   window.threej.vendorWander = (on: boolean) => { vendorOpts.wander = on; vendorWander = on ? buildWander() : null; };
+  window.threej.vendorChar = () => vendorChar;
   window.threej.vendorWanderState = () => vendorWander?.state ?? null;
   window.threej.vendorRobotNames = names;
   console.info(`[vendor] gallery ready — ${manifest.robots.length} robots, crossfade + locomotion`);

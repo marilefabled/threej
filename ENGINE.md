@@ -5,7 +5,7 @@
 > how this project is built and where it's going. See the *Update protocol* at the
 > bottom — keeping this current is part of every change, not an afterthought.
 
-**Last updated:** 2026-06-20 (after the state machine)
+**Last updated:** 2026-06-20 (after the capsule character)
 
 ---
 
@@ -117,7 +117,7 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 | `loop.ts` | `createLoop(renderer, { maxDelta })` | `{ onFrame((t,dt)=>…)→disposer, setRender(fn), start, stop, elapsed, running }` |
 | `assets.ts` | `createAssets({ basePath, onProgress, onLoad, onError })` | `{ loadGLTF, loadModel, loadTexture, loadAll, enableDraco, manager, clear }` |
 | `state.ts` | `createUrlState({ debounce })` · `encodeState(obj)` · `decodeState(str)` | `{ read(), write(obj), encode, decode }` |
-| `physics.ts` | `await createPhysics({ gravity })` | `{ world, step(dt), addGround(y,half), addDynamic(mesh,shape,{link}), remove, links }` |
+| `physics.ts` | `await createPhysics({ gravity })` | `{ world, step(dt), addGround, addStaticBox, addDynamic(mesh,shape,{link}), addCharacter(mesh,{radius,half}), remove, links }` |
 | `audio.ts` | `createAudio({ volume })` · `toneWav(params)` | `{ load, tone, play, setVolume, mute, sounds, Howler }` |
 | `ecs.ts` | `createECS()` | `{ world, system(fn), update(dt, t) }` (miniplex `world`) |
 | `animator.ts` | `createAnimator(root)` | `{ add(name, clip), play(name, {fade,loop,timeScale}), update(dt), has, stop, current, currentAction }` |
@@ -154,7 +154,13 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 - `physics.ts` (Rapier): `await createPhysics()` (WASM init). `addDynamic(mesh,
   shape, { link })` links a mesh to a body — `link:false` lets something else
   (e.g. ECS) own the sync. `step(dt)` clamps the timestep so a stall can't explode
-  the integrator. Match `addGround(y)` to your visible floor's y.
+  the integrator. Match `addGround(y)` to your visible floor's y. `addStaticBox`
+  makes invisible walls. `addCharacter(mesh, { radius, half })` is a capsule on
+  Rapier's KinematicCharacterController: `move(dx, dz)` does move-and-slide
+  (blocked by static colliders, shoves dynamic ones via
+  `setApplyImpulsesToDynamicBodies`) and follows the mesh. The vendor bot routes
+  its locomotion (root motion or scripted) through it — so it collides with the
+  cell walls and pushes dropped crates.
 - `audio.ts` (Howler): a named sound registry + `toneWav()` so you can ship
   **without audio files** (synthesize blips/thuds). `play()` needs a user gesture
   (browser autoplay policy) — fine when triggered from clicks.

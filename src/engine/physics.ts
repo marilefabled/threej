@@ -45,6 +45,39 @@ export async function createPhysics({ gravity = { x: 0, y: -9.81, z: 0 } }: any 
     world.removeRigidBody(body);
   }
 
+  // A static box collider (walls, platforms). No mesh — invisible bounds.
+  function addStaticBox(hx: number, hy: number, hz: number, x = 0, y = 0, z = 0) {
+    const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, y, z));
+    world.createCollider(RAPIER.ColliderDesc.cuboid(hx, hy, hz), body);
+    return body;
+  }
+
+  // A capsule character: a kinematic body + Rapier's KinematicCharacterController
+  // (move-and-slide). move(dx, dz) tries a horizontal step, gets it corrected by
+  // collisions (slides along walls, pushes dynamic bodies), and follows `mesh`.
+  // Vertical is fixed (flat-floor demo); add gravity to `move` for real falling.
+  function addCharacter(mesh: any, { radius = 0.4, half = 0.5, centerY = 0.9, offset = 0.02 }: any = {}) {
+    const controller = world.createCharacterController(offset);
+    controller.setApplyImpulsesToDynamicBodies(true);   // shove crates out of the way
+    const p = mesh.position;
+    const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(p.x, centerY, p.z));
+    const collider = world.createCollider(RAPIER.ColliderDesc.capsule(half, radius), body);
+
+    function move(dx: number, dz: number) {
+      controller.computeColliderMovement(collider, { x: dx, y: 0, z: dz });
+      const c = controller.computedMovement();
+      const t = body.translation();
+      const nx = t.x + c.x, nz = t.z + c.z;
+      body.setNextKinematicTranslation({ x: nx, y: t.y, z: nz });
+      mesh.position.x = nx; mesh.position.z = nz;
+      return c;
+    }
+    function teleport(x: number, z: number) { body.setNextKinematicTranslation({ x, y: centerY, z }); mesh.position.x = x; mesh.position.z = z; }
+    function dispose() { world.removeRigidBody(body); world.removeCharacterController(controller); }
+
+    return { body, collider, controller, move, teleport, dispose };
+  }
+
   // Advance the simulation and sync meshes. dt is clamped so a stall doesn't
   // explode the integrator.
   function step(dt: number) {
@@ -58,5 +91,5 @@ export async function createPhysics({ gravity = { x: 0, y: -9.81, z: 0 } }: any 
     }
   }
 
-  return { world, step, addGround, addDynamic, remove, links, RAPIER };
+  return { world, step, addGround, addStaticBox, addDynamic, addCharacter, remove, links, RAPIER };
 }
