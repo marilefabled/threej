@@ -9,6 +9,7 @@ import { addLighting } from './engine/lighting.js';
 import { addEnvironment } from './engine/environment.js';
 import { createCameraZoom } from './engine/cameraZoom.js';
 import { createFollowCamera } from './engine/followCamera.js';
+import { createParticles } from './engine/particles.js';
 import { createBloom } from './engine/bloom.js';
 import { createLoop } from './engine/loop.js';
 import { createAssets } from './engine/assets.js';
@@ -123,6 +124,9 @@ const zoom = createCameraZoom(camera, controls, {
   base: BASE_CAM,
   lookAt: new THREE.Vector3(0, 1.6, 0),
 });
+
+// Shared particle system — footstep/jump/land dust + GUI sparkle bursts.
+const vfx = createParticles(scene, { max: 700, gravity: new THREE.Vector3(0, -2.6, 0), drag: 0.5 });
 
 // ── State ──
 let curAnim = 'idle';
@@ -360,6 +364,10 @@ const sceneFolder = gui.addFolder('Scene');
 sceneFolder.add({ play: () => playIntro() }, 'play').name('Play intro cutscene');
 sceneFolder.add({ skip: () => { dialogue.cancel(); director.skip(); } }, 'skip').name('Skip');
 
+const vfxFolder = gui.addFolder('VFX');
+vfxFolder.add({ sparkle: () => vfx.burst(new THREE.Vector3(0, 1.1, 0), 40, { speed: 3, spread: 0.5, up: 1.5, life: 0.9, lifeVar: 0.4, size: 0.22, color: 0x9fd0ff }) }, 'sparkle').name('Sparkle burst');
+vfxFolder.add({ poof: () => vfx.burst(new THREE.Vector3(0, 0.1, 0), 28, { speed: 2.2, spread: 1.2, up: 0.2, life: 0.5, size: 0.22, color: 0xd8c3a0 }) }, 'poof').name('Ground poof');
+
 // ── Render loop ──
 const loop = createLoop(renderer);
 
@@ -376,6 +384,9 @@ loop.onFrame((t) => jail.update(t));
 
 // Physics: advance the world (props are synced by the ECS system below)
 loop.onFrame((t, dt) => physics.step(dt));
+
+// Particles: integrate + fade dust/sparks
+loop.onFrame((t, dt) => vfx.update(dt));
 
 // ECS: run systems (mesh-sync from bodies, then ttl despawn) after the step
 loop.onFrame((t, dt) => ecs.update(dt, t));
@@ -407,7 +418,7 @@ window.addEventListener('resize', () => {
 });
 
 // Devtools handles
-window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, dialogue, director, playIntro, npcTrigger, getCurAnim: () => curAnim, spawnProp, GHOST_FORMS, createStateMachine };
+window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, dialogue, director, playIntro, npcTrigger, vfx, getCurAnim: () => curAnim, spawnProp, GHOST_FORMS, createStateMachine };
 
 // ── Vendor robot gallery: browse an extracted Unity pack (git-ignored) via
 // public/vendor/manifest.json (see tools/build-vendor-manifest.mjs). The packs
@@ -431,6 +442,7 @@ let vendorWander: any = null;   // wander state machine (built per robot when en
 let vendorBlend: any = null;       // drive locomotion blend (Idle/Walk/Run by speed)
 let vendorJumpAction: any = null;  // jump clip, overlaid on the blend when airborne
 let vendorJumpW = 0;               // jump overlay weight (smoothed)
+let vendorWasGrounded = true;      // for landing-puff edge detection
 const input = createInput();
 
 // Load a robot mesh: textured material, normalized scale, animator + the loop
@@ -483,13 +495,20 @@ async function loadVendorRobot(entry: any) {
       const a = input.axis();
       const running = input.down('ShiftLeft') || input.down('ShiftRight');
       const sp = a.len * (running ? 5.5 : 3.0);
-      if (input.consume('Space')) vendorChar.jump();
+      const jumped = input.consume('Space');
+      if (jumped) vendorChar.jump();
       const r = vendorChar.move(a.x * sp * dt, a.y * sp * dt, dt);
       if (a.len > 0.05) {                                  // smoothly turn to face movement
         let d = Math.atan2(a.x, a.y) - model.rotation.y;
         d = Math.atan2(Math.sin(d), Math.cos(d));          // shortest path around the circle
         model.rotation.y += d * Math.min(1, dt * 12);
       }
+      // ── Dust VFX: kick up at the feet on jump, landing, and footfalls ──
+      const feet = { x: model.position.x, y: model.position.y + 0.05, z: model.position.z };
+      if (jumped && vendorWasGrounded) vfx.burst(feet, 14, { speed: 1.6, spread: 0.7, up: 0.5, life: 0.5, size: 0.16, color: 0xcdd8ff });
+      if (r.grounded && !vendorWasGrounded) vfx.burst(feet, 20, { speed: 2.2, spread: 1.1, up: 0.12, life: 0.45, size: 0.2, color: 0xe0e8ff });
+      else if (r.grounded && a.len > 0.2) vfx.stream(feet, dt, a.len * (running ? 22 : 12), { speed: 0.5, spread: 0.5, up: 0.25, life: 0.45, size: 0.12, color: 0xc9b79a });
+      vendorWasGrounded = r.grounded;
       // Blend Idle↔Walk↔Run by speed; overlay the jump clip while airborne.
       if (vendorBlend) {
         vendorBlend.set(a.len * (running ? 2 : 1));        // 0 idle · 1 walk · 2 run

@@ -5,7 +5,7 @@
 > how this project is built and where it's going. See the *Update protocol* at the
 > bottom — keeping this current is part of every change, not an afterthought.
 
-**Last updated:** 2026-06-20 (after the follow camera)
+**Last updated:** 2026-06-20 (after the particle system)
 
 ---
 
@@ -71,6 +71,7 @@ src/
     environment.ts      floor · two-layer grid · glow disc · ground ring
     cameraZoom.ts       one-shot "fly to a target, hold, return" camera move
     followCamera.ts     third-person follow cam: trails a target, damped, aims above it
+    particles.ts        one-Points pool, soft procedural sprites; burst/stream/update
     bloom.ts            UnrealBloom post-processing (EffectComposer)
     loop.ts             render-loop registry: onFrame(t, dt) + setRender, clamped dt
     assets.ts           GLTF/FBX/OBJ/texture loader (deduped, lazy, skinning-safe clone)
@@ -121,6 +122,7 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 | `environment.ts` | `addEnvironment(scene)` | `{ floor, gridFine, gridCoarse, glowDisc, groundRing }` |
 | `cameraZoom.ts` | `createCameraZoom(camera, controls, { base, lookAt, zoomIn, hold, zoomOut })` | `{ trigger(targetVec3), update(dt, applyLookAt) }` |
 | `followCamera.ts` | `createFollowCamera(camera, { target, offset, lookHeight, stiffness, rotateWithTarget, obstacles })` | `{ update(dt), snap(), enabled, setTarget(t), target, stiffness, offset }` |
+| `particles.ts` | `createParticles(scene, { max, gravity, drag, blending, sizeScale })` | `{ burst(origin, n, opts), stream(origin, dt, rate, opts), update(dt), dispose(), points, count }` |
 | `bloom.ts` | `createBloom(renderer, scene, camera, { strength, radius, threshold })` | `{ composer, bloomPass, render(), setSize(w, h) }` |
 | `loop.ts` | `createLoop(renderer, { maxDelta })` | `{ onFrame((t,dt)=>…)→disposer, setRender(fn), start, stop, elapsed, running }` |
 | `assets.ts` | `createAssets({ basePath, onProgress, onLoad, onError })` | `{ loadGLTF, loadModel, loadTexture, loadAll, enableDraco, manager, clear }` |
@@ -227,6 +229,12 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
   zoom.update`), and `#look` tags no-op unless zoom owns the camera. Enabling follow
   sets `controls.enabled = false`; the vendor "Follow cam" toggle (auto-on with
   Drive) flips it back on release.
+- `particles.ts`: one `THREE.Points` pool (one draw call), soft round sprites drawn
+  *procedurally* in the fragment shader (no texture). CPU integrates pos/vel/life and
+  recycles a ring buffer; colour + size are per-particle so one system covers many
+  looks. `burst(origin, n, opts)` for one-shots, `stream(origin, dt, rate, opts)` for
+  continuous. The drive demo kicks up dust on footfalls/jump/land at the feet; the
+  "VFX" GUI folder has Sparkle/Poof bursts. Additive blending feeds the bloom pass.
 - `input.ts`: `axis()` gives a movement vector from WASD/arrows + the gamepad left
   stick (deadzoned, clamped to unit). `down(code)` is held-state; `consume(code)`
   is a one-shot edge read for actions (jump on Space). The full character-control
@@ -393,6 +401,7 @@ one meaningful commit per step).
 | `71f71de` | **Dialogue + cutscene** — `engine/dialogue.ts` (Ink/inkjs wrapper: lines/choices/variables, presentation-agnostic) + `dialogueUI.ts` (DOM box) + `engine/cutscene.ts` (GSAP-backed async director). "Scene" GUI folder plays an intro: camera dollies in, runs a branching conversation, dollies back. |
 | `01ff536` | **Dialogue actions + trigger zones** — line tags (`#anim:wave`) dispatch to `dialogue.command()` handlers (robot reacts mid-line); `dialogueUI.ts` typewriter reveal (click completes, click advances); `engine/trigger.ts` (flat XZ zone, edge enter/exit) — driving the character into an NPC ring on the floor starts a conversation (drive freezes while talking). |
 | `e7c9e91` | **Camera tags + conditional choices** — `#look:NAME` line tag punches the camera to a named framing (reuses `cameraZoom`, no-op mid-cutscene); Ink conditional choices `* { talked } [ … ]` gate options on story state, which now persists across knots (the warden intro changes the yard inmate's choices). |
+| _pending_ | **Particles / VFX** — `engine/particles.ts`, a one-draw-call `THREE.Points` pool with procedural soft sprites (no texture), per-particle colour/size, ring-buffer recycling. `burst`/`stream`/`update`. Drive kicks up dust on footfalls/jump/land; a "VFX" GUI folder fires Sparkle/Poof bursts; additive blending glows through bloom. |
 | `d9cb2c1` | **Follow camera** — `engine/followCamera.ts`, a damped third-person cam that trails a target and swings behind it. Camera owners are now a strict hierarchy (director > follow > zoom/orbit); the vendor "Follow cam (3rd person)" toggle auto-enables with Drive for a real game feel. |
 | `36f1a0b` | **Talk prompt** — the NPC zone no longer auto-starts; standing in it brightens the ring and shows a "press E to talk" prompt (`#talk-prompt`), and E starts the conversation. Prompt hides while talking / on exit / when drive stops. |
 
