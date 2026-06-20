@@ -10,6 +10,8 @@ import { addEnvironment } from './engine/environment.js';
 import { createCameraZoom } from './engine/cameraZoom.js';
 import { createFollowCamera } from './engine/followCamera.js';
 import { createParticles } from './engine/particles.js';
+import { createLevelLoader } from './engine/level.js';
+import { LEVELS } from './levels.js';
 import { createBloom } from './engine/bloom.js';
 import { createLoop } from './engine/loop.js';
 import { createAssets } from './engine/assets.js';
@@ -368,6 +370,39 @@ const vfxFolder = gui.addFolder('VFX');
 vfxFolder.add({ sparkle: () => vfx.burst(new THREE.Vector3(0, 1.1, 0), 40, { speed: 3, spread: 0.5, up: 1.5, life: 0.9, lifeVar: 0.4, size: 0.22, color: 0x9fd0ff }) }, 'sparkle').name('Sparkle burst');
 vfxFolder.add({ poof: () => vfx.burst(new THREE.Vector3(0, 0.1, 0), 28, { speed: 2.2, spread: 1.2, up: 0.2, life: 0.5, size: 0.22, color: 0xd8c3a0 }) }, 'poof').name('Ground poof');
 
+// ── Data-driven levels (engine/level.ts spawns from LEVELS data) ──
+const levelLoader = createLevelLoader(scene, {
+  factories: {
+    // a collidable crate: visual box + matching static physics collider (removed on unload)
+    crate: (e: any) => {
+      const [sx, sy, sz] = e.size ?? [1, 1, 1];
+      const [px, py, pz] = e.position ?? [0, 0, 0];
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz),
+        new THREE.MeshStandardMaterial({ color: e.color ?? 0x8a6f4a, roughness: 0.85, metalness: 0.05 }));
+      const body = physics.addStaticBox(sx / 2, sy / 2, sz / 2, px, py, pz);
+      return { object: mesh, dispose: () => physics.world.removeRigidBody(body) };
+    },
+  },
+  onTrigger: (t: any, edge: string) => {
+    if (edge === 'enter' && t.dialogue && !dialogue.active && !director.active) dialogue.run(t.dialogue);
+  },
+});
+const levelState = { level: 'none' };
+function loadLevel(key: string) {
+  const data = LEVELS[key] ?? LEVELS.none;
+  levelLoader.load(data);
+  levelState.level = key;
+  if (vendorChar && data.spawn) {                       // drop the driven character at the spawn point
+    vendorChar.teleport(data.spawn.x, data.spawn.z);
+    if (vendorModel) vendorModel.rotation.y = data.spawn.yaw ?? 0;
+  }
+  levelCtrl?.updateDisplay();
+}
+const levelFolder = gui.addFolder('Level');
+const levelCtrl = levelFolder.add(levelState, 'level',
+  Object.fromEntries(Object.entries(LEVELS).map(([k, v]: any) => [v.name, k])))
+  .name('Load level').onChange((k: string) => loadLevel(k));
+
 // ── Render loop ──
 const loop = createLoop(renderer);
 
@@ -418,7 +453,7 @@ window.addEventListener('resize', () => {
 });
 
 // Devtools handles
-window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, dialogue, director, playIntro, npcTrigger, vfx, getCurAnim: () => curAnim, spawnProp, GHOST_FORMS, createStateMachine };
+window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, dialogue, director, playIntro, npcTrigger, vfx, levelLoader, loadLevel, getCurAnim: () => curAnim, spawnProp, GHOST_FORMS, createStateMachine };
 
 // ── Vendor robot gallery: browse an extracted Unity pack (git-ignored) via
 // public/vendor/manifest.json (see tools/build-vendor-manifest.mjs). The packs
@@ -488,6 +523,7 @@ async function loadVendorRobot(entry: any) {
     // ── Drive (WASD/space): you control it — input → capsule, FSM picks clips ──
     if (vendorOpts.drive) {
       npcTrigger.update(model.position);                  // NPC talk zone (edge-triggered)
+      levelLoader.update(model.position);                 // level-defined trigger zones
       const canTalk = npcTrigger.inside && !dialogue.active && !director.active;
       talkPrompt.hidden = !canTalk;                        // "press E to talk" while in range
       if (canTalk && input.consume('KeyE')) { talkPrompt.hidden = true; dialogue.run('yard_npc'); }
