@@ -1,0 +1,6 @@
+# macOS
+.DS_Store
+
+# Editor / local
+*.log
+.claude/settings.local.json
