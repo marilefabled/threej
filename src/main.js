@@ -57,7 +57,6 @@ jail.setMood('neutral');
 // What a theme recolors
 const themeCtx = {
   materials: robot.materials,
-  eyeHalos: robot.eyeHalos,
   groundRing: env.groundRing,
   glowDisc: env.glowDisc,
   bounce: lights.bounce,
@@ -112,10 +111,23 @@ GHOST_FORMS.forEach(form => {
 ghostSelect.value = 'classic';
 ghostSelect.addEventListener('change', () => jail.setGhostForm(0, ghostSelect.value));
 
-// ── Debug panel (lil-gui) — live bloom + lighting tuning ──
+// ── Debug panel (lil-gui) — live bloom + lighting tuning + robot parts ──
 const gui = createDebugPanel({ title: 'Engine' });
 addBloomControls(gui, bloom, renderer);
 addLightControls(gui, { ...lights, moodLight });
+
+// Robot part variations — a dropdown per part + a randomizer
+const partsFolder = gui.addFolder('Robot Parts');
+const cap = (s) => s[0].toUpperCase() + s.slice(1);
+const partState = { ...robot.parts.current };
+['head', 'torso', 'arms', 'legs'].forEach(part => {
+  const opts = {};
+  robot.parts.options[part].forEach(name => { opts[cap(name)] = name; });
+  partsFolder.add(partState, part, opts).name(cap(part))
+    .onChange(v => robot.parts.set(part, v)).listen();
+});
+partState.randomize = () => Object.assign(partState, robot.parts.randomize());
+partsFolder.add(partState, 'randomize').name('Randomize');
 
 // Initial selection
 ui.selectTheme(0);

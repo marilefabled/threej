@@ -1,17 +1,18 @@
 import * as THREE from 'three';
 
 // Arms hang DOWN by default. Positive Z rotation swings an arm toward the body
-// centre, negative Z swings it away. So raising arms OUT to the sides at
-// shoulder level = left arm -ARM_SIDE, right arm +ARM_SIDE.
-export const ARM_SIDE = Math.PI * 0.5; // 90° — arms straight out, true shoulder level
+// centre, negative Z away. Shoulder-level T-pose = left -ARM_SIDE, right +ARM_SIDE.
+export const ARM_SIDE = Math.PI * 0.5;
 
-// Builds the blocky robot from primitives and adds it to the scene. Returns:
-//   materials  — the shared material set (themes recolor these)
-//   eyeHalos   — the transparent eye-glow sprites (recolored by themes)
-//   rig        — the handles the animations move, plus rig.reset() which
-//                restores the neutral pose each frame before an animation runs.
+// Builds the robot over a FIXED skeleton of pivot groups (which the animations
+// drive) and fills each part with a swappable visual "variant". Swapping a part
+// only rebuilds the meshes inside that pivot — the kinematics never change, so
+// every animation keeps working. Returns:
+//   materials  — shared material set (themes recolor these)
+//   rig        — handles the animations move, plus rig.reset()
+//   parts      — { options, current, set(part, name), randomize() }
 export function buildRobot(scene) {
-  // ── Materials (gunmetal grey + bright accents; recolored by themes.js) ──
+  // ── Materials (recolored by themes.js) ──
   const M = {
     body:  new THREE.MeshStandardMaterial({ color: 0x7799bb, roughness: 0.25, metalness: 0.7,  emissive: 0x223355, emissiveIntensity: 0.6 }),
     head:  new THREE.MeshStandardMaterial({ color: 0x88aacc, roughness: 0.2,  metalness: 0.72, emissive: 0x2a4466, emissiveIntensity: 0.7 }),
@@ -19,209 +20,198 @@ export function buildRobot(scene) {
     joint: new THREE.MeshStandardMaterial({ color: 0xaabbd0, roughness: 0.45, metalness: 0.55, emissive: 0x334455, emissiveIntensity: 0.3 }),
     panel: new THREE.MeshStandardMaterial({ color: 0x334455, roughness: 0.6,  metalness: 0.5,  emissive: 0x111e2e, emissiveIntensity: 0.4 }),
     eye:   new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 4.0, roughness: 0, metalness: 0 }),
+    eyeHalo: new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.12 }),
     glow:  new THREE.MeshStandardMaterial({ color: 0x22eeff, emissive: 0x22eeff, emissiveIntensity: 2.5, roughness: 0 }),
   };
 
   const fig = new THREE.Group();
   scene.add(fig);
 
-  const mesh = (geo, mat) => {
-    const m = new THREE.Mesh(geo, mat);
-    m.castShadow = true;
-    m.receiveShadow = true;
-    return m;
-  };
+  // mesh helpers
+  const mk = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; return m; };
+  const box = (w, h, d, mat) => mk(new THREE.BoxGeometry(w, h, d), mat);
+  const cyl = (rt, rb, h, mat, s = 10) => mk(new THREE.CylinderGeometry(rt, rb, h, s), mat);
+  const sph = (r, mat, a = 12, b = 8) => mk(new THREE.SphereGeometry(r, a, b), mat);
+  const halo = (r, pos) => { const m = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 12), M.eyeHalo); m.position.copy(pos); return m; };
+  const clear = (g) => { while (g.children.length) { const c = g.children[0]; g.remove(c); c.geometry?.dispose(); } };
+  const at = (m, x, y, z) => { m.position.set(x, y, z); return m; };
 
-  // ── Torso ──
-  const torsoGroup = new THREE.Group();
-  torsoGroup.position.y = 1.45;
-  fig.add(torsoGroup);
-  torsoGroup.add(mesh(new THREE.BoxGeometry(0.76, 0.92, 0.44), M.body));
+  // ── Skeleton: persistent pivots the animations reference ──
+  const torsoGroup = new THREE.Group(); torsoGroup.position.y = 1.45; fig.add(torsoGroup);
+  const torsoVis = new THREE.Group(); torsoGroup.add(torsoVis);
 
-  const chestPanel = mesh(new THREE.BoxGeometry(0.38, 0.46, 0.44), M.panel);
-  chestPanel.position.z = 0.001;
-  torsoGroup.add(chestPanel);
+  // Hips + neck are static (not part of the variation set)
+  const hips = new THREE.Group(); hips.position.y = 0.93; fig.add(hips);
+  hips.add(box(0.64, 0.24, 0.4, M.body));
+  [-1, 1].forEach(s => hips.add(at(box(0.1, 0.2, 0.38, M.panel), s * 0.28, 0, 0)));
+  fig.add(at(cyl(0.09, 0.12, 0.2, M.joint), 0, 1.9, 0));
 
-  const spine = mesh(new THREE.BoxGeometry(0.06, 0.5, 0.445), M.panel);
-  torsoGroup.add(spine);
+  const headGroup = new THREE.Group(); headGroup.position.y = 2.1; fig.add(headGroup);
+  const headVis = new THREE.Group(); headGroup.add(headVis);
 
-  const chestDot = mesh(new THREE.SphereGeometry(0.075, 16, 16), M.glow);
-  chestDot.position.z = 0.225;
-  torsoGroup.add(chestDot);
-
-  [-1, 1].forEach(s => {
-    const pad = mesh(new THREE.BoxGeometry(0.14, 0.16, 0.36), M.panel);
-    pad.position.set(s * 0.39, 0.32, 0);
-    torsoGroup.add(pad);
-  });
-
-  // ── Hips ──
-  const hipsGroup = new THREE.Group();
-  hipsGroup.position.y = 0.93;
-  fig.add(hipsGroup);
-  hipsGroup.add(mesh(new THREE.BoxGeometry(0.64, 0.24, 0.4), M.body));
-  [-1, 1].forEach(s => {
-    const plate = mesh(new THREE.BoxGeometry(0.1, 0.2, 0.38), M.panel);
-    plate.position.x = s * 0.28;
-    hipsGroup.add(plate);
-  });
-
-  // ── Neck ──
-  const neck = mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.2, 10), M.joint);
-  neck.position.y = 1.9;
-  fig.add(neck);
-
-  // ── Head ──
-  const headGroup = new THREE.Group();
-  headGroup.position.y = 2.1;
-  fig.add(headGroup);
-
-  const headMesh = mesh(new THREE.BoxGeometry(0.6, 0.56, 0.5), M.head);
-  headMesh.position.y = 0.28;
-  headGroup.add(headMesh);
-
-  const visor = mesh(new THREE.BoxGeometry(0.5, 0.18, 0.5), M.panel);
-  visor.position.set(0, 0.32, 0.001);
-  headGroup.add(visor);
-
-  const eyeHalos = [];
-  [-0.13, 0.13].forEach(x => {
-    const e = mesh(new THREE.SphereGeometry(0.068, 12, 12), M.eye);
-    e.position.set(x, 0.33, 0.26);
-    headGroup.add(e);
-    const halo = new THREE.Mesh(
-      new THREE.SphereGeometry(0.1, 12, 12),
-      new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.12 })
-    );
-    halo.position.copy(e.position);
-    headGroup.add(halo);
-    eyeHalos.push(halo);
-  });
-
-  for (let i = 0; i < 4; i++) {
-    const slit = mesh(new THREE.BoxGeometry(0.28, 0.028, 0.5), M.panel);
-    slit.position.set(0, 0.08 + i * 0.048, 0);
-    headGroup.add(slit);
-  }
-
-  [-1, 1].forEach(s => {
-    const ear = mesh(new THREE.BoxGeometry(0.06, 0.2, 0.3), M.panel);
-    ear.position.set(s * 0.3, 0.28, 0);
-    headGroup.add(ear);
-  });
-
-  const antenna = mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.3, 8), M.joint);
-  antenna.position.y = 0.71;
-  headGroup.add(antenna);
-  const antBall = mesh(new THREE.SphereGeometry(0.058, 12, 12), M.glow);
-  antBall.position.y = 0.86;
-  headGroup.add(antBall);
-
-  // ── Arms (root pivot at the shoulder, forearm pivots at the elbow) ──
   function makeArm(sign) {
-    const root = new THREE.Group();
-    root.position.set(sign * 0.52, 1.62, 0); // shoulder near top of torso
-    fig.add(root);
-
-    root.add(mesh(new THREE.SphereGeometry(0.11, 10, 10), M.joint)); // shoulder
-
-    const upper = mesh(new THREE.CylinderGeometry(0.088, 0.082, 0.42, 10), M.limb);
-    upper.position.y = -0.23;
-    root.add(upper);
-
-    const elbow = mesh(new THREE.SphereGeometry(0.092, 10, 10), M.joint);
-    elbow.position.y = -0.45;
-    root.add(elbow);
-
-    const foreGroup = new THREE.Group();
-    foreGroup.position.y = -0.45;
-    root.add(foreGroup);
-
-    const fore = mesh(new THREE.CylinderGeometry(0.068, 0.06, 0.36, 10), M.limb);
-    fore.position.y = -0.19;
-    foreGroup.add(fore);
-
-    const wrist = mesh(new THREE.SphereGeometry(0.065, 8, 8), M.joint);
-    wrist.position.y = -0.39;
-    foreGroup.add(wrist);
-
-    const hand = mesh(new THREE.BoxGeometry(0.15, 0.15, 0.1), M.body);
-    hand.position.y = -0.5;
-    foreGroup.add(hand);
-
-    return { root, foreGroup };
+    const root = new THREE.Group(); root.position.set(sign * 0.52, 1.62, 0); fig.add(root);
+    const upperVis = new THREE.Group(); root.add(upperVis);
+    const foreGroup = new THREE.Group(); foreGroup.position.y = -0.45; root.add(foreGroup);
+    const foreVis = new THREE.Group(); foreGroup.add(foreVis);
+    return { root, foreGroup, upperVis, foreVis };
   }
+  const LA = makeArm(-1), RA = makeArm(1);
 
-  const LA = makeArm(-1);
-  const RA = makeArm(1);
-
-  // ── Legs (root pivot at the hip, lower leg pivots at the knee) ──
   function makeLeg(sign) {
-    const root = new THREE.Group();
-    root.position.set(sign * 0.22, 0.93, 0);
-    fig.add(root);
-
-    const upper = mesh(new THREE.CylinderGeometry(0.115, 0.105, 0.46, 10), M.limb);
-    upper.position.y = -0.24;
-    root.add(upper);
-
-    const knee = mesh(new THREE.SphereGeometry(0.11, 10, 10), M.joint);
-    knee.position.y = -0.48;
-    root.add(knee);
-
-    const lowerGroup = new THREE.Group();
-    lowerGroup.position.y = -0.48;
-    root.add(lowerGroup);
-
-    const lower = mesh(new THREE.CylinderGeometry(0.08, 0.072, 0.4, 10), M.limb);
-    lower.position.y = -0.21;
-    lowerGroup.add(lower);
-
-    const ankle = mesh(new THREE.SphereGeometry(0.075, 8, 8), M.joint);
-    ankle.position.y = -0.43;
-    lowerGroup.add(ankle);
-
-    const foot = mesh(new THREE.BoxGeometry(0.18, 0.1, 0.3), M.body);
-    foot.position.set(0, -0.5, 0.07);
-    lowerGroup.add(foot);
-
-    const toe = mesh(new THREE.BoxGeometry(0.16, 0.06, 0.08), M.panel);
-    toe.position.set(0, -0.5, 0.25);
-    lowerGroup.add(toe);
-
-    return { root, lowerGroup };
+    const root = new THREE.Group(); root.position.set(sign * 0.22, 0.93, 0); fig.add(root);
+    const upperVis = new THREE.Group(); root.add(upperVis);
+    const lowerGroup = new THREE.Group(); lowerGroup.position.y = -0.48; root.add(lowerGroup);
+    const lowerVis = new THREE.Group(); lowerGroup.add(lowerVis);
+    return { root, lowerGroup, upperVis, lowerVis };
   }
+  const LL = makeLeg(-1), RL = makeLeg(1);
 
-  const LL = makeLeg(-1);
-  const RL = makeLeg(1);
-
-  // Restore the neutral pose. The render loop calls this every frame before
-  // applying the current animation, so animations only set what they change.
-  function reset() {
-    fig.position.y = 0;
-    fig.rotation.set(0, 0, 0);
-    torsoGroup.rotation.set(0, 0, 0);
-    torsoGroup.scale.set(1, 1, 1);
-    headGroup.rotation.set(0, 0, 0);
-    LA.root.rotation.set(0, 0, -ARM_SIDE);
-    RA.root.rotation.set(0, 0,  ARM_SIDE);
-    LA.foreGroup.rotation.set(0, 0, 0);
-    RA.foreGroup.rotation.set(0, 0, 0);
-    LL.root.rotation.set(0, 0, 0);
-    RL.root.rotation.set(0, 0, 0);
-    LL.lowerGroup.rotation.set(0, 0, 0);
-    RL.lowerGroup.rotation.set(0, 0, 0);
-  }
-
-  const rig = {
-    fig,
-    torso: torsoGroup,
-    head: headGroup,
-    antBall,
-    glow: M.glow,
-    LA, RA, LL, RL,
-    reset,
+  // ── Part variants ───────────────────────────────────────────────────────────
+  // Each head variant fills headVis and returns the antenna ball (animated glow).
+  const HEAD = {
+    boxy(g) {
+      g.add(at(box(0.6, 0.56, 0.5, M.head), 0, 0.28, 0));
+      g.add(at(box(0.5, 0.18, 0.5, M.panel), 0, 0.32, 0.001));
+      [-0.13, 0.13].forEach(x => {
+        const e = at(sph(0.068, M.eye, 12, 12), x, 0.33, 0.26); g.add(e); g.add(halo(0.1, e.position));
+      });
+      for (let i = 0; i < 4; i++) g.add(at(box(0.28, 0.028, 0.5, M.panel), 0, 0.08 + i * 0.048, 0));
+      [-1, 1].forEach(s => g.add(at(box(0.06, 0.2, 0.3, M.panel), s * 0.3, 0.28, 0)));
+      g.add(at(cyl(0.016, 0.016, 0.3, M.joint, 8), 0, 0.71, 0));
+      const ball = at(sph(0.058, M.glow, 12, 12), 0, 0.86, 0); g.add(ball);
+      return ball;
+    },
+    round(g) {
+      const h = at(sph(0.33, M.head, 20, 16), 0, 0.34, 0); h.scale.set(1, 0.95, 1); g.add(h);
+      g.add(at(box(0.5, 0.14, 0.06, M.panel), 0, 0.42, 0.26));         // brow band
+      [-0.13, 0.13].forEach(x => {
+        const e = at(sph(0.082, M.eye, 14, 14), x, 0.34, 0.29); g.add(e); g.add(halo(0.12, e.position));
+      });
+      g.add(at(box(0.18, 0.03, 0.04, M.panel), 0, 0.2, 0.31));          // little mouth
+      g.add(at(cyl(0.014, 0.014, 0.26, M.joint, 8), 0, 0.66, 0));
+      const ball = at(sph(0.06, M.glow, 12, 12), 0, 0.8, 0); g.add(ball);
+      return ball;
+    },
+    slim(g) {
+      g.add(at(box(0.44, 0.64, 0.44, M.head), 0, 0.32, 0));
+      g.add(at(box(0.34, 0.5, 0.02, M.panel), 0, 0.34, 0.225));         // tall visor plate
+      [-0.1, 0.1].forEach(x => {
+        const e = at(sph(0.052, M.eye, 12, 12), x, 0.42, 0.24); g.add(e); g.add(halo(0.082, e.position));
+      });
+      g.add(at(box(0.22, 0.025, 0.46, M.panel), 0, 0.16, 0));           // single mouth slit
+      g.add(at(cyl(0.014, 0.014, 0.42, M.joint, 8), 0, 0.85, 0));
+      const ball = at(sph(0.05, M.glow, 12, 12), 0, 1.08, 0); g.add(ball);
+      return ball;
+    },
   };
 
-  return { materials: M, eyeHalos, rig };
+  const TORSO = {
+    boxy(g) {
+      g.add(box(0.76, 0.92, 0.44, M.body));
+      g.add(at(box(0.38, 0.46, 0.44, M.panel), 0, 0, 0.001));
+      g.add(box(0.06, 0.5, 0.445, M.panel));
+      g.add(at(sph(0.075, M.glow, 16, 16), 0, 0, 0.225));
+      [-1, 1].forEach(s => g.add(at(box(0.14, 0.16, 0.36, M.panel), s * 0.39, 0.32, 0)));
+    },
+    barrel(g) {
+      g.add(cyl(0.42, 0.42, 0.94, M.body, 18));
+      g.add(at(cyl(0.45, 0.45, 0.1, M.panel, 18), 0, 0.22, 0));
+      g.add(at(cyl(0.45, 0.45, 0.1, M.panel, 18), 0, -0.22, 0));
+      g.add(at(sph(0.085, M.glow, 16, 16), 0, 0, 0.4));
+      [-1, 1].forEach(s => g.add(at(sph(0.13, M.joint, 12, 12), s * 0.4, 0.34, 0)));
+    },
+    slim(g) {
+      g.add(box(0.58, 0.96, 0.34, M.body));
+      g.add(at(box(0.3, 0.54, 0.35, M.panel), 0, 0, 0.001));
+      g.add(at(sph(0.07, M.glow, 16, 16), 0, 0.02, 0.18));
+      [-1, 1].forEach(s => g.add(at(box(0.1, 0.5, 0.3, M.limb), s * 0.32, 0, 0)));
+    },
+  };
+
+  // Arm variants fill upperVis (at the shoulder) + foreVis (at the elbow). Keep
+  // the elbow at y=-0.45 and hand at y=-0.5 so the kinematics match.
+  const ARM = {
+    tube(upperVis, foreVis) {
+      upperVis.add(sph(0.11, M.joint, 10, 10));
+      upperVis.add(at(cyl(0.088, 0.082, 0.42, M.limb), 0, -0.23, 0));
+      upperVis.add(at(sph(0.092, M.joint, 10, 10), 0, -0.45, 0));
+      foreVis.add(at(cyl(0.068, 0.06, 0.36, M.limb), 0, -0.19, 0));
+      foreVis.add(at(sph(0.065, M.joint, 8, 8), 0, -0.39, 0));
+      foreVis.add(at(box(0.15, 0.15, 0.1, M.body), 0, -0.5, 0));
+    },
+    blocky(upperVis, foreVis) {
+      upperVis.add(box(0.2, 0.2, 0.2, M.joint));
+      upperVis.add(at(box(0.16, 0.42, 0.16, M.limb), 0, -0.23, 0));
+      upperVis.add(at(box(0.19, 0.13, 0.19, M.joint), 0, -0.45, 0));
+      foreVis.add(at(box(0.14, 0.36, 0.14, M.limb), 0, -0.19, 0));
+      foreVis.add(at(box(0.17, 0.16, 0.13, M.body), 0, -0.5, 0));
+    },
+  };
+
+  // Leg variants fill upperVis (hip) + lowerVis (at the knee, y=-0.48).
+  const LEG = {
+    tube(upperVis, lowerVis) {
+      upperVis.add(at(cyl(0.115, 0.105, 0.46, M.limb), 0, -0.24, 0));
+      upperVis.add(at(sph(0.11, M.joint, 10, 10), 0, -0.48, 0));
+      lowerVis.add(at(cyl(0.08, 0.072, 0.4, M.limb), 0, -0.21, 0));
+      lowerVis.add(at(sph(0.075, M.joint, 8, 8), 0, -0.43, 0));
+      lowerVis.add(at(box(0.18, 0.1, 0.3, M.body), 0, -0.5, 0.07));
+      lowerVis.add(at(box(0.16, 0.06, 0.08, M.panel), 0, -0.5, 0.25));
+    },
+    blocky(upperVis, lowerVis) {
+      upperVis.add(at(box(0.2, 0.46, 0.2, M.limb), 0, -0.24, 0));
+      upperVis.add(at(box(0.19, 0.14, 0.19, M.joint), 0, -0.48, 0));
+      lowerVis.add(at(box(0.16, 0.4, 0.16, M.limb), 0, -0.21, 0));
+      lowerVis.add(at(box(0.22, 0.12, 0.34, M.body), 0, -0.5, 0.08));
+      lowerVis.add(at(box(0.2, 0.07, 0.1, M.panel), 0, -0.5, 0.27));
+    },
+  };
+
+  // ── Build / swap ──
+  const current = { head: 'boxy', torso: 'boxy', arms: 'tube', legs: 'tube' };
+  let antBall = null;
+
+  function buildHead(name) { clear(headVis); antBall = HEAD[name](headVis); rig.antBall = antBall; current.head = name; }
+  function buildTorso(name) { clear(torsoVis); TORSO[name](torsoVis); current.torso = name; }
+  function buildArms(name) {
+    [LA, RA].forEach(a => { clear(a.upperVis); clear(a.foreVis); ARM[name](a.upperVis, a.foreVis); });
+    current.arms = name;
+  }
+  function buildLegs(name) {
+    [LL, RL].forEach(l => { clear(l.upperVis); clear(l.lowerVis); LEG[name](l.upperVis, l.lowerVis); });
+    current.legs = name;
+  }
+
+  const BUILDERS = { head: buildHead, torso: buildTorso, arms: buildArms, legs: buildLegs };
+  const options = { head: Object.keys(HEAD), torso: Object.keys(TORSO), arms: Object.keys(ARM), legs: Object.keys(LEG) };
+
+  function setVariant(part, name) { if (BUILDERS[part] && options[part].includes(name)) BUILDERS[part](name); }
+  function randomize() {
+    for (const part of Object.keys(options)) {
+      const list = options[part];
+      setVariant(part, list[Math.floor(Math.random() * list.length)]);
+    }
+    return { ...current };
+  }
+
+  // Restore neutral pose each frame before an animation runs.
+  function reset() {
+    fig.position.y = 0; fig.rotation.set(0, 0, 0);
+    torsoGroup.rotation.set(0, 0, 0); torsoGroup.scale.set(1, 1, 1);
+    headGroup.rotation.set(0, 0, 0);
+    LA.root.rotation.set(0, 0, -ARM_SIDE); RA.root.rotation.set(0, 0, ARM_SIDE);
+    LA.foreGroup.rotation.set(0, 0, 0); RA.foreGroup.rotation.set(0, 0, 0);
+    LL.root.rotation.set(0, 0, 0); RL.root.rotation.set(0, 0, 0);
+    LL.lowerGroup.rotation.set(0, 0, 0); RL.lowerGroup.rotation.set(0, 0, 0);
+  }
+
+  const rig = { fig, torso: torsoGroup, head: headGroup, antBall: null, glow: M.glow, LA, RA, LL, RL, reset };
+
+  // Build the defaults
+  buildTorso('boxy'); buildHead('boxy'); buildArms('tube'); buildLegs('tube');
+
+  const parts = { options, current, set: setVariant, randomize };
+
+  return { materials: M, rig, parts };
 }

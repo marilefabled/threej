@@ -17,19 +17,19 @@ export const THEMES = [
 ];
 
 // Apply a theme. `ctx` carries the things a theme recolors:
-//   { materials, eyeHalos, groundRing, glowDisc, bounce }
+//   { materials, groundRing, glowDisc, bounce }
 export function applyTheme(th, ctx) {
-  const { materials: M, eyeHalos, groundRing, glowDisc, bounce } = ctx;
+  const { materials: M, groundRing, glowDisc, bounce } = ctx;
 
   M.body.color.setHex(th.body);
   M.head.color.setHex(th.head);
   M.limb.color.setHex(th.limb);
   M.joint.color.setHex(th.joint);
   M.panel.color.setHex(th.panel);
-  M.eye.color.setHex(th.eye);     M.eye.emissive.setHex(th.eye);
-  M.glow.color.setHex(th.accent); M.glow.emissive.setHex(th.accent);
+  M.eye.color.setHex(th.eye);      M.eye.emissive.setHex(th.eye);
+  M.eyeHalo.color.setHex(th.eye);
+  M.glow.color.setHex(th.accent);  M.glow.emissive.setHex(th.accent);
 
-  eyeHalos.forEach(h => h.material.color.setHex(th.eye));
   groundRing.material.color.setHex(th.ground);
   glowDisc.material.color.setHex(th.ground);
   bounce.color.setHex(th.ground);

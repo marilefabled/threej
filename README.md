@@ -10,6 +10,9 @@ beside it, and you can change the location and time of day.
 ## Features
 
 - **9 animations** — Idle, Wave, Dance, Spin, Jump, Punch, Flex, Walk, Think
+- **Robot part variations** — swappable head (boxy / round / slim), torso (boxy /
+  barrel / slim), arms (tube / blocky) and legs (tube / blocky) over a fixed
+  skeleton, so every animation keeps working. Pick per-part or Randomize.
 - **6 color themes** — Steel, Crimson, Emerald, Gold, Violet, Mono. Each recolors
   the full robot, its eyes/glow accent, the ground glow, and the bounce light.
 - **9 jail locations** — cell block, yard, cafeteria, library, infirmary,
@@ -56,7 +59,7 @@ src/
     debugPanel.js     lil-gui panel + composable bloom/light control helpers
     easing.js         easing helpers
   robot/            the robot
-    robot.js          builds the figure from primitives, returns a posable rig
+    robot.js          fixed skeleton + swappable part variants → posable rig + parts API
     animations.js     the 9 pose functions + per-anim colors and zoom targets
     themes.js         the 6 color themes + applyTheme()
   jail/             ghost + location graphics (ported from GhostJail3D)
@@ -77,6 +80,10 @@ get the same stage. **`robot/`** and **`jail/`** are the project-specific 3D cod
   in `index.html`.
 - **New theme** — add one entry to `THEMES` in `src/robot/themes.js`; the swatch
   UI is generated from that list.
+- **New part variant** — add a builder to the `HEAD` / `TORSO` / `ARM` / `LEG`
+  map in `src/robot/robot.js`. Keep the kinematic anchors (elbow at y=-0.45, knee
+  at y=-0.48, etc.) so animations still line up; the lil-gui dropdown picks it up
+  automatically.
 - **New location** — add a `case` to `buildLocation()` and an entry to `LOCATIONS`
   in `src/jail/locationBuilder.js`; the dropdown is generated from that list.
 - **New ghost form** — add an entry to `FORMS` in `src/jail/ghostMesh.js`.
