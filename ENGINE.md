@@ -5,7 +5,7 @@
 > how this project is built and where it's going. See the *Update protocol* at the
 > bottom — keeping this current is part of every change, not an afterthought.
 
-**Last updated:** 2026-06-20 (after the vendor robot gallery)
+**Last updated:** 2026-06-20 (after the crossfade animator)
 
 ---
 
@@ -76,6 +76,7 @@ src/
     physics.ts          Rapier (WASM) wrapper: world, ground, addDynamic, step+sync
     audio.ts            Howler wrapper + procedural WAV generator (no asset files)
     ecs.ts              miniplex World + a frame-system registry
+    animator.ts         AnimationMixer crossfade controller (named clips, play(name))
     debugPanel.ts       lil-gui panel + composable bloom/light control helpers
     easing.ts           easing helpers
   robot/              the figure (content)
@@ -117,6 +118,7 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 | `physics.ts` | `await createPhysics({ gravity })` | `{ world, step(dt), addGround(y,half), addDynamic(mesh,shape,{link}), remove, links }` |
 | `audio.ts` | `createAudio({ volume })` · `toneWav(params)` | `{ load, tone, play, setVolume, mute, sounds, Howler }` |
 | `ecs.ts` | `createECS()` | `{ world, system(fn), update(dt, t) }` (miniplex `world`) |
+| `animator.ts` | `createAnimator(root)` | `{ add(name, clip), play(name, {fade,loop,timeScale}), update(dt), has, stop, current }` |
 | `debugPanel.ts` | `createDebugPanel({ title, closed })` · `addBloomControls(gui, bloom, renderer)` · `addLightControls(gui, lights)` | a lil-gui `GUI` + folders |
 | `easing.ts` | `easeInOut(t)` | number |
 
@@ -152,6 +154,11 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 - `audio.ts` (Howler): a named sound registry + `toneWav()` so you can ship
   **without audio files** (synthesize blips/thuds). `play()` needs a user gesture
   (browser autoplay policy) — fine when triggered from clicks.
+- `animator.ts`: a crossfade layer over `AnimationMixer`. `add(name, clip)` then
+  `play(name, { fade })` fades from the current action to the next (the base of a
+  state machine). The vendor gallery uses it: switching the Animation dropdown
+  crossfades on the same model, and walk/run clips drive a small locomotion path
+  (animation → movement). Root-motion extraction would be the next layer.
 - `ecs.ts` (miniplex): `world.add({...components})`, query with
   `world.with('a','b')`, `system((world, dt, t) => …)`, drive with
   `ecs.update(dt, t)` from the loop. The demo's dropped props are entities

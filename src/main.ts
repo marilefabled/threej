@@ -15,6 +15,7 @@ import { createUrlState } from './engine/state.js';
 import { createPhysics } from './engine/physics.js';
 import { createAudio } from './engine/audio.js';
 import { createECS } from './engine/ecs.js';
+import { createAnimator } from './engine/animator.js';
 import { createDebugPanel, addBloomControls, addLightControls } from './engine/debugPanel.js';
 
 import { buildRobot } from './robot/robot.js';
@@ -306,12 +307,19 @@ window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physic
 // so we load the mesh once and retarget a clip onto it by bone name. Textures are
 // PSD→PNG (converted with sips). Silently skipped on a clone without the pack. ──
 let vendorModel: any = null;
-let vendorAnimDispose: (() => void) | null = null;
+let vendorAnimator: any = null;
+let vendorDispose: (() => void) | null = null;
+let vendorClip = '';          // current clip name (drives locomotion)
+let vendorGroundY = 0;        // feet-on-floor y for the current model
+let walkAngle = 0;            // phase along the walk circle
+const WALK_R = 0.9;           // radius of the wander circle
+const vendorCenter = new THREE.Vector2(-1.7, 2.0 - WALK_R); // so home sits on the circle
 
-async function showVendor(entry: any, animName: string) {
-  // Tear down the previous robot + its mixer's frame callback
-  if (vendorAnimDispose) { vendorAnimDispose(); vendorAnimDispose = null; }
-  if (vendorModel) { scene.remove(vendorModel); vendorModel = null; }
+// Load a robot mesh: textured material, normalized scale, animator + the loop
+// hooks (animator update + locomotion). Reused on robot change.
+async function loadVendorRobot(entry: any) {
+  if (vendorDispose) { vendorDispose(); vendorDispose = null; }
+  if (vendorModel) { scene.remove(vendorModel); vendorModel = null; vendorAnimator = null; }
 
   const { scene: model } = await assets.loadModel(encodeURI(entry.mesh), { type: 'fbx' });
   const map = entry.texture ? await assets.loadTexture(encodeURI(entry.texture)) : null;
@@ -325,26 +333,47 @@ async function showVendor(entry: any, animName: string) {
       metalness: 0.2, roughness: 0.7,
     });
   });
-  // Normalize: ~1.8 units tall, feet on floor, front-left of the primitive robot
   let box = new THREE.Box3().setFromObject(model);
   model.scale.setScalar(1.8 / (box.getSize(new THREE.Vector3()).y || 1));
-  model.rotation.y = 0.5;
   box = new THREE.Box3().setFromObject(model);
-  model.position.set(-1.6, -box.min.y, 2.2);
+  vendorGroundY = -box.min.y;
+  walkAngle = 0;
+  model.position.set(vendorCenter.x, vendorGroundY, vendorCenter.y + WALK_R);
+  model.rotation.y = 0.5;
   scene.add(model);
   vendorModel = model;
+  vendorAnimator = createAnimator(model);
   window.threej.vendorRobot = model;
 
-  const clipInfo = entry.animations.find((a: any) => a.name === animName) ?? entry.animations[0];
-  if (clipInfo) {
-    const a = await assets.loadModel(encodeURI(clipInfo.file), { type: 'fbx', clone: false });
-    const clip = a.animations?.[0];
-    if (clip) {
-      const mixer = new THREE.AnimationMixer(model);
-      mixer.clipAction(clip).play();
-      vendorAnimDispose = loop.onFrame((_t, dt) => mixer.update(dt));
+  vendorDispose = loop.onFrame((_t, dt) => {
+    vendorAnimator.update(dt);
+    // Locomotion: walk/run clips drive the robot around a gentle circle; other
+    // clips play in place. (A first taste of an animation→movement controller.)
+    if (/walk|run/i.test(vendorClip)) {
+      const speed = /run/i.test(vendorClip) ? 1.3 : 0.65;
+      walkAngle += (speed / WALK_R) * dt;
+      model.position.set(
+        vendorCenter.x + Math.sin(walkAngle) * WALK_R,
+        vendorGroundY,
+        vendorCenter.y + Math.cos(walkAngle) * WALK_R,
+      );
+      model.rotation.y = walkAngle + Math.PI / 2;   // face along the path
     }
+  });
+}
+
+// Crossfade to a clip on the current robot (loading + caching its FBX on demand).
+async function setVendorClip(entry: any, name: string) {
+  if (!vendorAnimator) return;
+  const info = entry.animations.find((a: any) => a.name === name) ?? entry.animations[0];
+  if (!info) return;
+  if (!vendorAnimator.has(info.name)) {
+    const a = await assets.loadModel(encodeURI(info.file), { type: 'fbx', clone: false });
+    const clip = a.animations?.[0];
+    if (clip) { clip.name = info.name; vendorAnimator.add(info.name, clip); }
   }
+  vendorClip = info.name;
+  vendorAnimator.play(info.name, { fade: 0.35 });
 }
 
 (async () => {
@@ -355,18 +384,23 @@ async function showVendor(entry: any, animName: string) {
   const pick = { robot: names.includes('Nose Robot') ? 'Nose Robot' : names[0], animation: 'Idle' };
   const entryFor = (n: string) => manifest.robots.find((r: any) => r.name === n);
   const animsFor = (n: string) => entryFor(n).animations.map((a: any) => a.name);
+  if (!animsFor(pick.robot).includes('Idle')) pick.animation = animsFor(pick.robot)[0];
 
   const folder = gui.addFolder('Vendor Robot');
-  if (!animsFor(pick.robot).includes('Idle')) pick.animation = animsFor(pick.robot)[0];
-  let animCtrl = folder.add(pick, 'animation', animsFor(pick.robot)).name('Animation')
-    .onChange(() => showVendor(entryFor(pick.robot), pick.animation));
-  folder.add(pick, 'robot', names).name('Robot').onChange(() => {
+  folder.add(pick, 'robot', names).name('Robot').onChange(async () => {
     const anims = animsFor(pick.robot);
     pick.animation = anims.includes('Idle') ? 'Idle' : anims[0];
-    animCtrl = animCtrl.options(anims).name('Animation').onChange(() => showVendor(entryFor(pick.robot), pick.animation));
-    showVendor(entryFor(pick.robot), pick.animation);
+    animCtrl = animCtrl.options(anims).name('Animation').onChange(() => setVendorClip(entryFor(pick.robot), pick.animation));
+    await loadVendorRobot(entryFor(pick.robot));
+    setVendorClip(entryFor(pick.robot), pick.animation);
   });
+  let animCtrl = folder.add(pick, 'animation', animsFor(pick.robot)).name('Animation')
+    .onChange(() => setVendorClip(entryFor(pick.robot), pick.animation));
 
-  await showVendor(entryFor(pick.robot), pick.animation);
-  console.info(`[vendor] gallery ready — ${manifest.robots.length} robots`);
+  await loadVendorRobot(entryFor(pick.robot));
+  await setVendorClip(entryFor(pick.robot), pick.animation);
+  // dev/test hooks
+  window.threej.vendorSetClip = (n: string) => setVendorClip(entryFor(pick.robot), n);
+  window.threej.vendorRobotNames = names;
+  console.info(`[vendor] gallery ready — ${manifest.robots.length} robots, crossfade + locomotion`);
 })();
