@@ -2,6 +2,9 @@
 
 An interactive Three.js robot — modular ES modules, no build step.
 
+> **Building on this repo?** Read [`ENGINE.md`](./ENGINE.md) first — it's the living
+> doc covering architecture, the reusable engine API, the changelog, and the roadmap.
+
 A blocky robot stands inside a procedural prison and responds to on-screen
 buttons: each triggers a distinct animation, recolors its label, and kicks off a
 camera zoom that eases in, holds, then returns to a neutral framing. Ghosts float
