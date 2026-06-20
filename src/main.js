@@ -9,6 +9,7 @@ import { addLighting } from './engine/lighting.js';
 import { addEnvironment } from './engine/environment.js';
 import { createCameraZoom } from './engine/cameraZoom.js';
 import { createBloom } from './engine/bloom.js';
+import { createLoop } from './engine/loop.js';
 import { createDebugPanel, addBloomControls, addLightControls } from './engine/debugPanel.js';
 
 import { buildRobot } from './robot/robot.js';
@@ -134,32 +135,35 @@ ui.selectTheme(0);
 ui.selectAnim('idle');
 
 // ── Render loop ──
-const clock = new THREE.Clock();
-renderer.setAnimationLoop(() => {
-  const dt = clock.getDelta();
+const loop = createLoop(renderer);
+
+// Robot pose — its own time base, reset when the animation changes (onAnim sets
+// animTime = 0). Kept separate from the loop's continuous world time `t`.
+loop.onFrame((t, dt) => {
   animTime += dt;
-  const t = animTime;
-
-  // Robot pose
   robot.rig.reset();
-  (ANIMATIONS[curAnim] || ANIMATIONS.idle)(robot.rig, t);
+  (ANIMATIONS[curAnim] || ANIMATIONS.idle)(robot.rig, animTime);
+});
 
-  // Ghosts float
-  jail.update(t);
+// Ghosts float on continuous world time
+loop.onFrame((t) => jail.update(t));
 
-  // Ambient life
+// Ambient life — rim lights, bounce, ground-glow pulse
+loop.onFrame((t) => {
   lights.rimL.intensity = 4 + Math.sin(t * 0.7) * 1.2;
   lights.rimR.intensity = 2.5 + Math.sin(t * 0.9 + 1) * 0.8;
   lights.bounce.intensity = 2.0 + Math.sin(t * 2.2) * 0.6;
   env.groundRing.material.opacity = 0.22 + Math.sin(t * 2) * 0.1;
   env.glowDisc.material.opacity = 0.1 + Math.sin(t * 1.5) * 0.04;
-
-  // Camera (don't force lookAt while spinning)
-  zoom.update(dt, curAnim !== 'spin');
-
-  // Render through bloom composer
-  bloom.render();
 });
+
+// Camera zoom (don't force lookAt while spinning)
+loop.onFrame((t, dt) => zoom.update(dt, curAnim !== 'spin'));
+
+// Draw through the bloom composer — once, after every update above
+loop.setRender(() => bloom.render());
+
+loop.start();
 
 // Keep bloom sized with the window (scene.js already resizes renderer + camera)
 window.addEventListener('resize', () => {
@@ -167,4 +171,4 @@ window.addEventListener('resize', () => {
 });
 
 // Devtools handles
-window.threej = { scene, camera, robot, jail, bloom, GHOST_FORMS };
+window.threej = { scene, camera, robot, jail, bloom, loop, GHOST_FORMS };

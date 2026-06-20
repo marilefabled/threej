@@ -57,6 +57,7 @@ src/
     environment.js    floor · two-layer grid · glow disc · ground ring
     cameraZoom.js     one-shot "fly to a target, hold, return" camera move
     bloom.js          UnrealBloom post-processing pipeline (EffectComposer)
+    loop.js           render-loop registry: onFrame(t, dt) + setRender, clamped dt
     debugPanel.js     lil-gui panel + composable bloom/light control helpers
     easing.js         easing helpers
   robot/            the robot
@@ -71,8 +72,10 @@ src/
 ```
 
 The split is deliberate: **`engine/` is generic** — drop it into a new project and
-call `createScene()` / `addLighting()` / `createBloom()` / `createCameraZoom()` to
-get the same stage. **`robot/`** and **`jail/`** are the project-specific 3D code.
+call `createScene()` / `addLighting()` / `createBloom()` / `createLoop()` to get
+the same stage. **`robot/`** and **`jail/`** are the project-specific 3D code.
+`main.js` doesn't hand-roll a render loop; it registers `loop.onFrame((t, dt) =>
+…)` callbacks and a `loop.setRender(…)`, then `loop.start()`.
 
 ### Extending it
 
