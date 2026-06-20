@@ -1,27 +1,57 @@
 // ── Composition root ──────────────────────────────────────────────────────────
-// Wires the reusable engine modules together with the robot-specific pieces and
-// runs the render loop. Read top-to-bottom: build the scene, build the robot,
-// wire the UI, then animate.
+// Wires the reusable engine modules + the robot + the jail (location backdrop,
+// ghosts, bloom) together and runs the render loop. The robot demo is unchanged;
+// it now stands inside a selectable jail location with floating ghost companions.
 import * as THREE from 'three';
 
 import { createScene } from './engine/scene.js';
 import { addLighting } from './engine/lighting.js';
 import { addEnvironment } from './engine/environment.js';
 import { createCameraZoom } from './engine/cameraZoom.js';
+import { createBloom } from './engine/bloom.js';
 
 import { buildRobot } from './robot/robot.js';
-import { ANIMATIONS, ANIM_COLORS, ZOOM_TARGETS } from './robot/animations.js';
+import { ANIMATIONS, ZOOM_TARGETS } from './robot/animations.js';
 import { THEMES, applyTheme } from './robot/themes.js';
+
+import { createJail } from './jail/jailScene.js';
+import { LOCATIONS } from './jail/locationBuilder.js';
+import { GHOST_FORMS } from './jail/ghostMesh.js';
 
 import { setupUI } from './ui.js';
 
-// ── Build the stage ──
+// ── Stage ──
 const { renderer, scene, camera, controls, BASE_CAM } = createScene();
+// The robot is now in a lit room (not the dark void), and bloom adds brightness,
+// so dial exposure down from the void-tuned 2.2.
+renderer.toneMappingExposure = 1.5;
 const lights = addLighting(scene);
 const env = addEnvironment(scene);
+
+// The robot now stands in a real room, so hide the open-grid void. Keep the
+// themed glow disc + ring (they sit under the robot like a magic circle).
+env.floor.visible = false;
+env.gridFine.visible = false;
+env.gridCoarse.visible = false;
+
 const robot = buildRobot(scene);
 
-// What a theme needs to recolor
+// Jail mood light (recolored by the Period control)
+const moodLight = new THREE.PointLight(0x3344aa, 1.8, 16);
+moodLight.position.set(0, 3.5, 1.5);
+scene.add(moodLight);
+
+// Bloom — makes emissive surfaces (robot core/eyes, ghost eyes/glow) bloom
+const bloom = createBloom(renderer, scene, camera, { strength: 0.5, radius: 0.4, threshold: 1.5 });
+
+// Jail: location geometry + ghosts + period lighting + GSAP transitions
+const jail = createJail(scene, { moodLight, getBloomPass: () => bloom.bloomPass });
+jail.setLocation('cell_block_a', { animate: false });
+jail.addGhost({ glowColor: '#33f589', ghostForm: 'classic', size: 'medium' }, { x: 1.85, y: 0.95, z: 0.5 });
+jail.addGhost({ glowColor: '#8899ff', ghostForm: 'wispy',   size: 'small'  }, { x: -1.95, y: 1.15, z: -0.2 });
+jail.setPeriod('night');
+
+// What a theme recolors
 const themeCtx = {
   materials: robot.materials,
   eyeHalos: robot.eyeHalos,
@@ -30,7 +60,7 @@ const themeCtx = {
   bounce: lights.bounce,
 };
 
-// Camera fly-in helper, returns to BASE_CAM and hands control back to the user
+// Camera fly-in for animations (returns to BASE_CAM, hands control back)
 const zoom = createCameraZoom(camera, controls, {
   base: BASE_CAM,
   lookAt: new THREE.Vector3(0, 1.6, 0),
@@ -40,18 +70,32 @@ const zoom = createCameraZoom(camera, controls, {
 let curAnim = 'idle';
 let animTime = 0;
 
-// ── UI ──
+// ── Robot UI (themes + animations) ──
 const ui = setupUI({
   themes: THEMES,
   onAnim: (name) => {
     curAnim = name;
-    animTime = 0;                  // restart the move from t=0
+    animTime = 0;
     zoom.trigger(ZOOM_TARGETS[name]);
   },
   onTheme: (i) => applyTheme(THEMES[i], themeCtx),
 });
 
-// Initial selection (these fire the callbacks above)
+// ── Jail UI (location + period) ──
+const locationSelect = document.getElementById('location-select');
+LOCATIONS.forEach(loc => {
+  const opt = document.createElement('option');
+  opt.value = loc.id;
+  opt.textContent = loc.name;
+  locationSelect.appendChild(opt);
+});
+locationSelect.value = 'cell_block_a';
+locationSelect.addEventListener('change', () => jail.setLocation(locationSelect.value));
+
+const periodSelect = document.getElementById('period-select');
+periodSelect.addEventListener('change', () => jail.setPeriod(periodSelect.value));
+
+// Initial selection
 ui.selectTheme(0);
 ui.selectAnim('idle');
 
@@ -62,22 +106,31 @@ renderer.setAnimationLoop(() => {
   animTime += dt;
   const t = animTime;
 
-  // Pose the robot: reset to neutral, then apply the current animation
+  // Robot pose
   robot.rig.reset();
   (ANIMATIONS[curAnim] || ANIMATIONS.idle)(robot.rig, t);
 
-  // Ambient life: breathing rim lights, bounce, and ground glow pulse
+  // Ghosts float
+  jail.update(t);
+
+  // Ambient life
   lights.rimL.intensity = 4 + Math.sin(t * 0.7) * 1.2;
   lights.rimR.intensity = 2.5 + Math.sin(t * 0.9 + 1) * 0.8;
   lights.bounce.intensity = 2.0 + Math.sin(t * 2.2) * 0.6;
   env.groundRing.material.opacity = 0.22 + Math.sin(t * 2) * 0.1;
   env.glowDisc.material.opacity = 0.1 + Math.sin(t * 1.5) * 0.04;
 
-  // Camera: don't force lookAt while spinning (let the subject rotate freely)
+  // Camera (don't force lookAt while spinning)
   zoom.update(dt, curAnim !== 'spin');
 
-  renderer.render(scene, camera);
+  // Render through bloom composer
+  bloom.render();
 });
 
-// Expose a couple of handles for tinkering from the devtools console
-window.threej = { scene, camera, robot, ANIM_COLORS };
+// Keep bloom sized with the window (scene.js already resizes renderer + camera)
+window.addEventListener('resize', () => {
+  bloom.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Devtools handles
+window.threej = { scene, camera, robot, jail, bloom, GHOST_FORMS };

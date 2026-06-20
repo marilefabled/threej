@@ -7,6 +7,22 @@
 </head>
 <body>
 
+<div id="jail-bar">
+  <label class="field">
+    <span class="cap">Location</span>
+    <select id="location-select"></select>
+  </label>
+  <label class="field">
+    <span class="cap">Period</span>
+    <select id="period-select">
+      <option value="dawn">Dawn</option>
+      <option value="day">Day</option>
+      <option value="dusk">Dusk</option>
+      <option value="night" selected>Night</option>
+    </select>
+  </label>
+</div>
+
 <div id="theme-bar">
   <div class="cap">Theme</div>
   <div id="swatches"></div>
@@ -32,7 +48,8 @@
 {
   "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/",
+    "gsap": "https://esm.sh/gsap@3.12.5"
   }
 }
 </script>

@@ -2,20 +2,29 @@
 
 An interactive Three.js robot — modular ES modules, no build step.
 
-A blocky robot rendered from Three.js primitives responds to on-screen buttons:
-each button triggers a distinct animation, recolors its label, and kicks off a
-camera zoom that eases in, holds, then returns to a neutral framing.
+A blocky robot stands inside a procedural prison and responds to on-screen
+buttons: each triggers a distinct animation, recolors its label, and kicks off a
+camera zoom that eases in, holds, then returns to a neutral framing. Ghosts float
+beside it, and you can change the location and time of day.
 
 ## Features
 
 - **9 animations** — Idle, Wave, Dance, Spin, Jump, Punch, Flex, Walk, Think
 - **6 color themes** — Steel, Crimson, Emerald, Gold, Violet, Mono. Each recolors
   the full robot, its eyes/glow accent, the ground glow, and the bounce light.
-- **Per-animation camera zoom** — eases to a framing chosen per move, holds, then
-  returns to neutral.
-- **Orbit controls** — drag to orbit, scroll to zoom (disabled briefly during a
-  triggered zoom, then handed back).
-- Double grid floor, ground glow ring, soft shadows, rim + fill lighting.
+- **9 jail locations** — cell block, yard, cafeteria, library, infirmary,
+  solitary, underground, warden's office (procedural "backgrounds"), each with
+  its own props and fog.
+- **Floating ghosts** — 8 procedural ghost forms with float / glow / blink, GSAP
+  rise-up entrances on load and on location change.
+- **Bloom** — UnrealBloom post-processing so emissive surfaces (robot core/eyes,
+  ghost eyes/glow) bloom.
+- **Period control** — dawn / day / dusk / night mood lighting.
+- **Per-animation camera zoom**, orbit controls, ground glow ring, soft shadows,
+  rim + fill lighting.
+
+The ghost + location graphics were ported from a sibling SvelteKit project
+(GhostJail3D) into this repo's vanilla, no-build style.
 
 ## Run it
 
@@ -40,17 +49,22 @@ src/
     lighting.js       ambient · sun (shadows) · fill · rim lights · ground bounce
     environment.js    floor · two-layer grid · glow disc · ground ring
     cameraZoom.js     one-shot "fly to a target, hold, return" camera move
+    bloom.js          UnrealBloom post-processing pipeline (EffectComposer)
     easing.js         easing helpers
-  robot/            this project's content
+  robot/            the robot
     robot.js          builds the figure from primitives, returns a posable rig
     animations.js     the 9 pose functions + per-anim colors and zoom targets
     themes.js         the 6 color themes + applyTheme()
+  jail/             ghost + location graphics (ported from GhostJail3D)
+    ghostMesh.js      8 procedural ghost forms + float/glow/blink animation
+    locationBuilder.js  the 9 prison locations, built from primitives
+    jailScene.js      manages the active location, ghosts, period light, GSAP
   ui.js             button + swatch DOM wiring (no Three.js knowledge)
 ```
 
 The split is deliberate: **`engine/` is generic** — drop it into a new project and
-call `createScene()` / `addLighting()` / `createCameraZoom()` to get the same
-stage. **`robot/`** is the only project-specific 3D code.
+call `createScene()` / `addLighting()` / `createBloom()` / `createCameraZoom()` to
+get the same stage. **`robot/`** and **`jail/`** are the project-specific 3D code.
 
 ### Extending it
 
@@ -59,8 +73,12 @@ stage. **`robot/`** is the only project-specific 3D code.
   in `index.html`.
 - **New theme** — add one entry to `THEMES` in `src/robot/themes.js`; the swatch
   UI is generated from that list.
+- **New location** — add a `case` to `buildLocation()` and an entry to `LOCATIONS`
+  in `src/jail/locationBuilder.js`; the dropdown is generated from that list.
+- **New ghost form** — add an entry to `FORMS` in `src/jail/ghostMesh.js`.
 
 ## Stack
 
-- [Three.js](https://threejs.org/) 0.165 (CDN, native ES modules + import map)
+- [Three.js](https://threejs.org/) 0.165 + addons (CDN, native ES modules + import map)
+- [GSAP](https://gsap.com/) 3.12 (CDN, for ghost entrances + transitions)
 - Vanilla HTML/CSS/JS — no bundler, no install

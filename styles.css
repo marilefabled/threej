@@ -28,6 +28,30 @@ canvas { display: block; }
   pointer-events: all;
 }
 
+/* ── Jail controls (top left) ── */
+#jail-bar {
+  position: fixed; top: 16px; left: 16px;
+  display: flex; flex-direction: column; gap: 10px;
+  pointer-events: all;
+}
+#jail-bar .field { display: flex; flex-direction: column; gap: 4px; }
+#jail-bar .cap {
+  font-size: 0.58rem; letter-spacing: 0.32em; text-transform: uppercase;
+  color: rgba(255,255,255,0.4);
+}
+#jail-bar select {
+  background: rgba(10,12,20,0.7);
+  border: 1px solid rgba(255,255,255,0.18);
+  color: rgba(255,255,255,0.85);
+  font-family: inherit; font-size: 0.74rem; letter-spacing: 0.08em;
+  padding: 7px 10px; border-radius: 5px;
+  cursor: pointer; min-width: 150px;
+  transition: border-color 0.15s, background 0.15s;
+}
+#jail-bar select:hover { border-color: rgba(255,255,255,0.4); background: rgba(20,24,36,0.8); }
+#jail-bar select:focus { outline: none; border-color: rgba(120,160,255,0.7); }
+#jail-bar option { background: #0c0e16; color: #ddd; }
+
 /* ── Theme picker (top center) ── */
 #theme-bar {
   position: fixed; top: 18px; left: 0; right: 0;
