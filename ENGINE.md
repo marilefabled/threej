@@ -182,6 +182,8 @@ one meaningful commit per step).
 | `ce73d3a` | **Swappable robot part variations** — `robot.js` rebuilt around a fixed skeleton + variant maps (head/torso/arms/legs); `parts` API + lil-gui "Robot Parts"; eye halos → shared `M.eyeHalo` material. |
 | `fd85cde` | **8 more part variants** — head +dome/+visor, torso +tank/+orb, arms +claw/+piston, legs +wheel/+hover → 400 combos; torus helper. |
 | `f220028` | **`engine/loop.js`** — render-loop registry (onFrame/setRender, clamped dt, monotonic t); main.js stops hand-rolling the loop; robot anim-time separated from continuous world-time. |
+| `4e09b3b` | **Docs** — `ENGINE.md` living doc + `CLAUDE.md`/`AGENTS.md` agent front-doors. |
+| `f39777e` | **`engine/assets.js`** — Promise-based GLTF/texture loader (deduped cache, progress manager, skinning-safe clone, lazy DRACO). The doorway to real Blender/Mixamo models; wired as `window.threej.assets`. |
 
 ---
 
