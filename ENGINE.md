@@ -5,7 +5,7 @@
 > how this project is built and where it's going. See the *Update protocol* at the
 > bottom — keeping this current is part of every change, not an afterthought.
 
-**Last updated:** 2026-06-20 (after the HUD framework)
+**Last updated:** 2026-06-20 (after save / load)
 
 ---
 
@@ -74,6 +74,7 @@ src/
     particles.ts        one-Points pool, soft procedural sprites; burst/stream/update
     level.ts            data-driven level loader: factories + triggers + spawn; load/unload
     hud.ts              HUD overlay: screen-anchored text/bars + world-anchored markers
+    save.ts             localStorage save slots: capture/apply + versioning + list
     bloom.ts            UnrealBloom post-processing (EffectComposer)
     loop.ts             render-loop registry: onFrame(t, dt) + setRender, clamped dt
     assets.ts           GLTF/FBX/OBJ/texture loader (deduped, lazy, skinning-safe clone)
@@ -127,6 +128,7 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 | `particles.ts` | `createParticles(scene, { max, gravity, drag, blending, sizeScale })` | `{ burst(origin, n, opts), stream(origin, dt, rate, opts), update(dt), dispose(), points, count }` |
 | `level.ts` | `createLevelLoader(scene, { factories, onTrigger })` | `{ load(data), unload(), update(point), registry, current, spawn }` |
 | `hud.ts` | `createHUD(camera, { root, className })` | `{ text(opts), bar(opts), marker(worldPos, opts), update(), layer, dispose() }` |
+| `save.ts` | `createSaveSystem({ key, version, capture, apply, storage })` | `{ save(slot), load(slot), has, remove, list(), exportSlot, importSlot }` |
 | `bloom.ts` | `createBloom(renderer, scene, camera, { strength, radius, threshold })` | `{ composer, bloomPass, render(), setSize(w, h) }` |
 | `loop.ts` | `createLoop(renderer, { maxDelta })` | `{ onFrame((t,dt)=>…)→disposer, setRender(fn), start, stop, elapsed, running }` |
 | `assets.ts` | `createAssets({ basePath, onProgress, onLoad, onError })` | `{ loadGLTF, loadModel, loadTexture, loadAll, enableDraco, manager, clear }` |
@@ -254,6 +256,13 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
   camera). Styling is CSS (`.hud-text`/`.hud-bar`/`.hud-marker`). The demo shows a
   Stamina meter (drains while sprinting in drive) and a "UNIT-07" nameplate over the
   driven robot.
+- `save.ts`: named save slots in `localStorage`. State-agnostic — you give it
+  `capture()` (return a JSON-serializable snapshot) and `apply(state, meta)`; it owns
+  slots, `version`, timestamps, `list()` (newest first), and import/export of the raw
+  JSON. Complements `state.ts` (which encodes state into the URL for *sharing*); this
+  *persists* across reloads. The demo captures the scene config (reusing
+  `currentConfig`) + the active level + the driven robot's pose, and a "Save / Load"
+  GUI folder writes/reads slot `slot1` with a HUD toast for feedback.
 - `input.ts`: `axis()` gives a movement vector from WASD/arrows + the gamepad left
   stick (deadzoned, clamped to unit). `down(code)` is held-state; `consume(code)`
   is a one-shot edge read for actions (jump on Space). The full character-control
@@ -420,6 +429,7 @@ one meaningful commit per step).
 | `71f71de` | **Dialogue + cutscene** — `engine/dialogue.ts` (Ink/inkjs wrapper: lines/choices/variables, presentation-agnostic) + `dialogueUI.ts` (DOM box) + `engine/cutscene.ts` (GSAP-backed async director). "Scene" GUI folder plays an intro: camera dollies in, runs a branching conversation, dollies back. |
 | `01ff536` | **Dialogue actions + trigger zones** — line tags (`#anim:wave`) dispatch to `dialogue.command()` handlers (robot reacts mid-line); `dialogueUI.ts` typewriter reveal (click completes, click advances); `engine/trigger.ts` (flat XZ zone, edge enter/exit) — driving the character into an NPC ring on the floor starts a conversation (drive freezes while talking). |
 | `e7c9e91` | **Camera tags + conditional choices** — `#look:NAME` line tag punches the camera to a named framing (reuses `cameraZoom`, no-op mid-cutscene); Ink conditional choices `* { talked } [ … ]` gate options on story state, which now persists across knots (the warden intro changes the yard inmate's choices). |
+| _pending_ | **Save / load** — `engine/save.ts`, named `localStorage` slots with `capture`/`apply` + versioning + `list()`/import/export. The demo persists the scene config + active level + driven-robot pose; a "Save / Load" GUI folder (Save/Load/Clear) writes slot `slot1` with a HUD toast. Survives reloads (verified). |
 | `375fa39` | **HUD framework** — `engine/hud.ts`, a DOM overlay with screen-anchored `text()`/`bar()` and world-anchored `marker()` (projected each frame). Demo: a Stamina meter that drains while sprinting (sprint now gated on it) + a "UNIT-07" nameplate floating over the driven robot. |
 | `12d63b3` | **Data-driven levels** — `engine/level.ts` instantiates a scene from a plain data object (objects via a factory registry, trigger zones, spawn point) and tears it down on swap. Factories can return `{ object, dispose }`; the demo `crate` adds a matching static collider. `src/levels.ts` + a "Level" GUI folder (None / Obstacle Course / Pillars). |
 | `b62a90f` | **Particles / VFX** — `engine/particles.ts`, a one-draw-call `THREE.Points` pool with procedural soft sprites (no texture), per-particle colour/size, ring-buffer recycling. `burst`/`stream`/`update`. Drive kicks up dust on footfalls/jump/land; a "VFX" GUI folder fires Sparkle/Poof bursts; additive blending glows through bloom. |

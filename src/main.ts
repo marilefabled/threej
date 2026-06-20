@@ -12,6 +12,7 @@ import { createFollowCamera } from './engine/followCamera.js';
 import { createParticles } from './engine/particles.js';
 import { createLevelLoader } from './engine/level.js';
 import { createHUD } from './engine/hud.js';
+import { createSaveSystem } from './engine/save.js';
 import { LEVELS } from './levels.js';
 import { createBloom } from './engine/bloom.js';
 import { createLoop } from './engine/loop.js';
@@ -411,6 +412,35 @@ const levelCtrl = levelFolder.add(levelState, 'level',
   Object.fromEntries(Object.entries(LEVELS).map(([k, v]: any) => [v.name, k])))
   .name('Load level').onChange((k: string) => loadLevel(k));
 
+// ── Save / Load (engine/save.ts → localStorage) ──
+const saveToast = hud.text({ anchor: 'top-center', y: 70, className: 'hud-text hud-toast' });
+saveToast.hide();
+let toastTimer: any = null;
+function toast(msg: string) {
+  saveToast.set(msg); saveToast.show();
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => saveToast.hide(), 1400);
+}
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const saves = createSaveSystem({
+  key: 'threej', version: 1,
+  // Snapshot: the scene config (theme/loc/period/mood/ghost/parts/anim) + the level
+  // + the driven robot's pose. apply() restores each in turn.
+  capture: () => ({
+    ...currentConfig(),
+    level: levelState.level,
+    vendor: vendorModel ? [round2(vendorModel.position.x), round2(vendorModel.position.z), round2(vendorModel.rotation.y)] : null,
+  }),
+  apply: (s: any) => {
+    applyConfig(s);
+    if (s.level != null && LEVELS[s.level]) loadLevel(s.level);
+    if (s.vendor && vendorChar) { vendorChar.teleport(s.vendor[0], s.vendor[1]); if (vendorModel) vendorModel.rotation.y = s.vendor[2]; }
+  },
+});
+const saveFolder = gui.addFolder('Save / Load');
+saveFolder.add({ save: () => { saves.save('slot1'); toast('● SAVED'); } }, 'save').name('Save');
+saveFolder.add({ load: () => { toast(saves.load('slot1') ? '● LOADED' : 'NO SAVE'); } }, 'load').name('Load');
+saveFolder.add({ clear: () => { saves.remove('slot1'); toast('SAVE CLEARED'); } }, 'clear').name('Clear save');
+
 // ── Render loop ──
 const loop = createLoop(renderer);
 
@@ -468,7 +498,7 @@ window.addEventListener('resize', () => {
 });
 
 // Devtools handles
-window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, dialogue, director, playIntro, npcTrigger, vfx, levelLoader, loadLevel, hud, getCurAnim: () => curAnim, spawnProp, GHOST_FORMS, createStateMachine };
+window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, dialogue, director, playIntro, npcTrigger, vfx, levelLoader, loadLevel, hud, saves, getCurAnim: () => curAnim, spawnProp, GHOST_FORMS, createStateMachine };
 
 // ── Vendor robot gallery: browse an extracted Unity pack (git-ignored) via
 // public/vendor/manifest.json (see tools/build-vendor-manifest.mjs). The packs

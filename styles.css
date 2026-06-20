@@ -154,6 +154,13 @@ canvas { display: block; }
   font-size: 0.74rem; letter-spacing: 0.18em; text-transform: uppercase;
   color: rgba(205,216,255,0.85); text-shadow: 0 0 12px rgba(120,160,255,0.5);
 }
+.hud-toast {
+  font-size: 0.86rem; letter-spacing: 0.28em; color: #cdd8ff;
+  padding: 9px 20px; border-radius: 999px;
+  background: rgba(8,10,18,0.78); border: 1px solid rgba(140,170,255,0.5);
+  box-shadow: 0 0 26px rgba(40,70,160,0.4); backdrop-filter: blur(6px);
+  animation: dlg-in 0.18s ease-out;
+}
 .hud-bar { display: flex; flex-direction: column; gap: 4px; }
 .hud-bar-label {
   font-size: 0.56rem; letter-spacing: 0.3em; text-transform: uppercase;
