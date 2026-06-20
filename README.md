@@ -10,9 +10,10 @@ beside it, and you can change the location and time of day.
 ## Features
 
 - **9 animations** — Idle, Wave, Dance, Spin, Jump, Punch, Flex, Walk, Think
-- **Robot part variations** — swappable head (boxy / round / slim), torso (boxy /
-  barrel / slim), arms (tube / blocky) and legs (tube / blocky) over a fixed
-  skeleton, so every animation keeps working. Pick per-part or Randomize.
+- **Robot part variations** — swappable head (boxy / round / slim / dome / visor),
+  torso (boxy / barrel / slim / tank / orb), arms (tube / blocky / claw / piston)
+  and legs (tube / blocky / wheel / hover) over a fixed skeleton, so every
+  animation keeps working. 400 combinations; pick per-part or Randomize.
 - **6 color themes** — Steel, Crimson, Emerald, Gold, Violet, Mono. Each recolors
   the full robot, its eyes/glow accent, the ground glow, and the bounce light.
 - **9 jail locations** — cell block, yard, cafeteria, library, infirmary,

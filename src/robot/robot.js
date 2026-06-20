@@ -32,6 +32,7 @@ export function buildRobot(scene) {
   const box = (w, h, d, mat) => mk(new THREE.BoxGeometry(w, h, d), mat);
   const cyl = (rt, rb, h, mat, s = 10) => mk(new THREE.CylinderGeometry(rt, rb, h, s), mat);
   const sph = (r, mat, a = 12, b = 8) => mk(new THREE.SphereGeometry(r, a, b), mat);
+  const tor = (r, t, mat, seg = 20) => mk(new THREE.TorusGeometry(r, t, 10, seg), mat);
   const halo = (r, pos) => { const m = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 12), M.eyeHalo); m.position.copy(pos); return m; };
   const clear = (g) => { while (g.children.length) { const c = g.children[0]; g.remove(c); c.geometry?.dispose(); } };
   const at = (m, x, y, z) => { m.position.set(x, y, z); return m; };
@@ -104,6 +105,27 @@ export function buildRobot(scene) {
       const ball = at(sph(0.05, M.glow, 12, 12), 0, 1.08, 0); g.add(ball);
       return ball;
     },
+    dome(g) {
+      const h = at(sph(0.34, M.head, 20, 16), 0, 0.28, 0); h.scale.set(1.05, 0.72, 1.05); g.add(h);
+      g.add(at(cyl(0.32, 0.36, 0.14, M.panel, 18), 0, 0.1, 0));        // collar base
+      [-0.12, 0.12].forEach(x => { const e = at(sph(0.07, M.eye, 14, 14), x, 0.26, 0.27); g.add(e); g.add(halo(0.1, e.position)); });
+      g.add(at(box(0.16, 0.025, 0.04, M.panel), 0, 0.12, 0.3));        // mouth
+      g.add(at(cyl(0.013, 0.013, 0.22, M.joint, 6), 0, 0.5, 0));       // antenna cluster
+      [-0.1, 0.1].forEach(x => g.add(at(cyl(0.011, 0.011, 0.14, M.joint, 6), x, 0.46, 0)));
+      const ball = at(sph(0.05, M.glow, 12, 12), 0, 0.63, 0); g.add(ball);
+      [-0.1, 0.1].forEach(x => g.add(at(sph(0.03, M.glow, 10, 10), x, 0.55, 0)));
+      return ball;
+    },
+    visor(g) {
+      g.add(at(box(0.6, 0.5, 0.5, M.head), 0, 0.3, 0));
+      g.add(at(box(0.54, 0.16, 0.06, M.panel), 0, 0.34, 0.24));        // visor housing
+      g.add(at(box(0.48, 0.07, 0.04, M.eye), 0, 0.34, 0.27));          // single glowing visor bar
+      for (let i = 0; i < 3; i++) g.add(at(box(0.3, 0.026, 0.5, M.panel), 0, 0.1 + i * 0.05, 0));
+      [-1, 1].forEach(s => g.add(at(box(0.05, 0.22, 0.34, M.panel), s * 0.31, 0.3, 0)));
+      g.add(at(cyl(0.016, 0.016, 0.28, M.joint, 8), 0, 0.7, 0));
+      const ball = at(sph(0.055, M.glow, 12, 12), 0, 0.84, 0); g.add(ball);
+      return ball;
+    },
   };
 
   const TORSO = {
@@ -127,6 +149,24 @@ export function buildRobot(scene) {
       g.add(at(sph(0.07, M.glow, 16, 16), 0, 0.02, 0.18));
       [-1, 1].forEach(s => g.add(at(box(0.1, 0.5, 0.3, M.limb), s * 0.32, 0, 0)));
     },
+    tank(g) {
+      g.add(box(0.92, 0.86, 0.5, M.body));
+      g.add(at(box(0.5, 0.5, 0.52, M.panel), 0, 0, 0.001));            // chest armor
+      g.add(at(sph(0.08, M.glow, 16, 16), 0, 0.05, 0.27));
+      [-1, 1].forEach(s => {                                          // shoulder armor
+        g.add(at(box(0.26, 0.22, 0.46, M.panel), s * 0.5, 0.34, 0));
+        g.add(at(box(0.26, 0.1, 0.46, M.limb), s * 0.5, 0.46, 0));
+      });
+      g.add(at(box(0.94, 0.12, 0.52, M.limb), 0, -0.4, 0));            // belt
+    },
+    orb(g) {
+      g.add(at(sph(0.4, M.body, 22, 18), 0, 0, 0));                    // spherical core
+      const ring = at(tor(0.42, 0.05, M.panel, 24), 0, 0, 0); ring.rotation.x = Math.PI / 2; g.add(ring);
+      g.add(at(sph(0.12, M.glow, 16, 16), 0, 0, 0.34));               // glowing core
+      [-1, 1].forEach(s => g.add(at(sph(0.14, M.joint, 14, 14), s * 0.38, 0.28, 0)));
+      g.add(at(cyl(0.16, 0.2, 0.18, M.panel, 12), 0, 0.42, 0));        // neck cap
+      g.add(at(cyl(0.2, 0.16, 0.18, M.panel, 12), 0, -0.42, 0));       // hip cap
+    },
   };
 
   // Arm variants fill upperVis (at the shoulder) + foreVis (at the elbow). Keep
@@ -147,6 +187,24 @@ export function buildRobot(scene) {
       foreVis.add(at(box(0.14, 0.36, 0.14, M.limb), 0, -0.19, 0));
       foreVis.add(at(box(0.17, 0.16, 0.13, M.body), 0, -0.5, 0));
     },
+    claw(upperVis, foreVis) {
+      upperVis.add(sph(0.11, M.joint, 10, 10));
+      upperVis.add(at(cyl(0.085, 0.078, 0.42, M.limb), 0, -0.23, 0));
+      upperVis.add(at(sph(0.09, M.joint, 10, 10), 0, -0.45, 0));
+      foreVis.add(at(cyl(0.065, 0.058, 0.34, M.limb), 0, -0.18, 0));
+      foreVis.add(at(sph(0.06, M.joint, 8, 8), 0, -0.38, 0));          // claw base
+      const p1 = at(box(0.05, 0.16, 0.05, M.body), -0.05, -0.48, 0.02); p1.rotation.z = 0.35; foreVis.add(p1);
+      const p2 = at(box(0.05, 0.16, 0.05, M.body), 0.05, -0.48, 0.02); p2.rotation.z = -0.35; foreVis.add(p2);
+    },
+    piston(upperVis, foreVis) {
+      upperVis.add(box(0.18, 0.14, 0.18, M.joint));                    // shoulder block
+      upperVis.add(at(cyl(0.06, 0.06, 0.42, M.limb), 0, -0.23, 0));    // thin rod
+      upperVis.add(at(cyl(0.1, 0.1, 0.2, M.panel), 0, -0.2, 0));       // piston sleeve
+      upperVis.add(at(sph(0.09, M.joint, 10, 10), 0, -0.45, 0));
+      foreVis.add(at(cyl(0.055, 0.055, 0.34, M.limb), 0, -0.18, 0));
+      foreVis.add(at(cyl(0.09, 0.09, 0.16, M.panel), 0, -0.14, 0));    // sleeve
+      foreVis.add(at(box(0.15, 0.12, 0.13, M.body), 0, -0.5, 0));      // hand
+    },
   };
 
   // Leg variants fill upperVis (hip) + lowerVis (at the knee, y=-0.48).
@@ -165,6 +223,21 @@ export function buildRobot(scene) {
       lowerVis.add(at(box(0.16, 0.4, 0.16, M.limb), 0, -0.21, 0));
       lowerVis.add(at(box(0.22, 0.12, 0.34, M.body), 0, -0.5, 0.08));
       lowerVis.add(at(box(0.2, 0.07, 0.1, M.panel), 0, -0.5, 0.27));
+    },
+    wheel(upperVis, lowerVis) {
+      upperVis.add(at(cyl(0.11, 0.1, 0.44, M.limb), 0, -0.24, 0));
+      upperVis.add(at(sph(0.11, M.joint, 10, 10), 0, -0.48, 0));
+      lowerVis.add(at(cyl(0.075, 0.07, 0.34, M.limb), 0, -0.18, 0));
+      // wheel (cylinder laid on its side, sized so it rests on the floor)
+      const w = at(cyl(0.17, 0.17, 0.13, M.body, 18), 0, -0.38, 0.02); w.rotation.z = Math.PI / 2; lowerVis.add(w);
+      const hub = at(cyl(0.07, 0.07, 0.15, M.panel, 12), 0, -0.38, 0.02); hub.rotation.z = Math.PI / 2; lowerVis.add(hub);
+    },
+    hover(upperVis, lowerVis) {
+      upperVis.add(at(cyl(0.12, 0.1, 0.4, M.limb), 0, -0.22, 0));
+      upperVis.add(at(sph(0.11, M.joint, 10, 10), 0, -0.46, 0));
+      lowerVis.add(at(cyl(0.08, 0.18, 0.3, M.panel, 16), 0, -0.22, 0)); // flared thruster nozzle
+      lowerVis.add(at(cyl(0.16, 0.16, 0.04, M.limb, 16), 0, -0.37, 0)); // rim
+      lowerVis.add(at(sph(0.1, M.glow, 14, 14), 0, -0.42, 0));          // thruster glow
     },
   };
 
