@@ -30,6 +30,7 @@ import { createDialogue, compileInk } from './engine/dialogue.js';
 import { createDirector } from './engine/cutscene.js';
 import { createTrigger } from './engine/trigger.js';
 import { createDialogueUI } from './dialogueUI.js';
+import { createSceneManager } from './engine/sceneManager.js';
 import { createDebugPanel, addBloomControls, addLightControls } from './engine/debugPanel.js';
 
 import { buildRobot } from './robot/robot.js';
@@ -371,9 +372,33 @@ function playIntro() {
     await cx.to(camera.position, { x: home.x, y: home.y, z: home.z, duration: 1.0, ease: 'power2.inOut', onUpdate: () => camera.lookAt(0, 1.6, 0) });
   }).then(() => { controls.enabled = true; });
 }
+// ── Scene manager ──
+const titleScreen = document.getElementById('title-screen') as HTMLElement;
+const scenes = createSceneManager({ transition: { duration: 0.4, color: '#07070f' } });
+let titleCleanup: (() => void) | null = null;
+let prevControlsEnabled = true;
+
+scenes.register('title', {
+  enter() {
+    titleScreen.hidden = false;
+    prevControlsEnabled = controls.enabled;
+    controls.enabled = false;     // prevent orbit while the title screen is up
+    let gone = false;
+    const start = () => { if (gone || scenes.busy) return; gone = true; scenes.go('game'); };
+    const onKey = (e: KeyboardEvent) => { if (e.code === 'Enter' || e.code === 'Space') start(); };
+    titleScreen.addEventListener('click', start);
+    document.addEventListener('keydown', onKey);
+    titleCleanup = () => { titleScreen.removeEventListener('click', start); document.removeEventListener('keydown', onKey); };
+  },
+  exit() { titleCleanup?.(); titleCleanup = null; titleScreen.hidden = true; controls.enabled = prevControlsEnabled; },
+});
+
+scenes.register('game', {});
+
 const sceneFolder = gui.addFolder('Scene');
 sceneFolder.add({ play: () => playIntro() }, 'play').name('Play intro cutscene');
 sceneFolder.add({ skip: () => { dialogue.cancel(); director.skip(); } }, 'skip').name('Skip');
+sceneFolder.add({ title: () => scenes.go('title') }, 'title').name('↩ Main menu');
 
 const vfxFolder = gui.addFolder('VFX');
 vfxFolder.add({ sparkle: () => vfx.burst(new THREE.Vector3(0, 1.1, 0), 40, { speed: 3, spread: 0.5, up: 1.5, life: 0.9, lifeVar: 0.4, size: 0.22, color: 0x9fd0ff }) }, 'sparkle').name('Sparkle burst');
@@ -487,10 +512,16 @@ loop.onFrame((t, dt) => {
   zoom.update(dt, curAnim !== 'spin');                 // default: free orbit + anim fly-ins
 });
 
+// Scene manager: route update to the active scene each frame
+loop.onFrame((t, dt) => scenes.update(dt, t));
+
 // Draw through the bloom composer — once, after every update above
 loop.setRender(() => bloom.render());
 
 loop.start();
+
+// Boot: start at the title screen — fades in from black (overlay starts opaque)
+scenes.go('title');
 
 // Keep bloom sized with the window (scene.js already resizes renderer + camera)
 window.addEventListener('resize', () => {
@@ -498,7 +529,7 @@ window.addEventListener('resize', () => {
 });
 
 // Devtools handles
-window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, dialogue, director, playIntro, npcTrigger, vfx, levelLoader, loadLevel, hud, saves, getCurAnim: () => curAnim, spawnProp, GHOST_FORMS, createStateMachine };
+window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, dialogue, director, playIntro, npcTrigger, vfx, levelLoader, loadLevel, hud, saves, scenes, getCurAnim: () => curAnim, spawnProp, GHOST_FORMS, createStateMachine };
 
 // ── Vendor robot gallery: browse an extracted Unity pack (git-ignored) via
 // public/vendor/manifest.json (see tools/build-vendor-manifest.mjs). The packs

@@ -5,7 +5,7 @@
 > how this project is built and where it's going. See the *Update protocol* at the
 > bottom — keeping this current is part of every change, not an afterthought.
 
-**Last updated:** 2026-06-20 (after save / load)
+**Last updated:** 2026-06-20 (after scene manager)
 
 ---
 
@@ -90,6 +90,7 @@ src/
     dialogue.ts         Ink (inkjs) wrapper: lines/choices/variables, presentation-agnostic
     cutscene.ts         GSAP-backed director: async script of awaitable engine actions
     trigger.ts          flat (XZ) volume zone: update(point) fires onEnter/onExit
+    sceneManager.ts     named scenes + cross-fade transitions; boot-reveal + go(name)
     debugPanel.ts       lil-gui panel + composable bloom/light control helpers
     easing.ts           easing helpers
   robot/              the figure (content)
@@ -108,9 +109,10 @@ tools/                node-side utilities (run with `node`, not in the browser)
 **Composition flow (`main.ts`):** `createScene()` → `addLighting()` /
 `addEnvironment()` → `buildRobot()` → mood light → `createBloom()` →
 `await createPhysics()` + `createAudio()` + `createECS()` → `createJail()` →
-theme/UI wiring → `createLoop()` registers frame callbacks + render → `loop.start()`.
+`createSceneManager()` + scene registration → theme/UI wiring → `createLoop()`
+registers frame callbacks + render → `loop.start()` → `scenes.go('title')`.
 The render loop runs (in order): robot pose · ghosts · `physics.step` · `ecs.update`
-· lights · camera zoom · `bloom.render()`.
+· lights · camera zoom · `sceneManager.update` · `bloom.render()`.
 
 ---
 
@@ -144,6 +146,7 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 | `dialogue.ts` | `compileInk(src)` · `createDialogue(story)` | `{ onUpdate(fn), start(knot), advance(), choose(i), run(knot), cancel(), command(name,fn), variable, active }` |
 | `cutscene.ts` | `createDirector(extras)` | `{ play(asyncScript), skip(), cx, active }` |
 | `trigger.ts` | `createTrigger({ position, radius, once, onEnter, onExit })` | `{ update(point), reset(), inside, position, radius }` |
+| `sceneManager.ts` | `createSceneManager({ transition: { duration, color } })` | `{ register(name, def), go(name, opts?), update(dt,t), dispose(), current, busy }` |
 | `debugPanel.ts` | `createDebugPanel({ title, closed })` · `addBloomControls(gui, bloom, renderer)` · `addLightControls(gui, lights)` | a lil-gui `GUI` + folders |
 | `easing.ts` | `easeInOut(t)` | number |
 
@@ -288,6 +291,17 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
   `ecs.update(dt, t)` from the loop. The demo's dropped props are entities
   `{ mesh, body, ttl }` with a sync system (mesh ← body) and a ttl despawn system.
   Iterate a snapshot (`[...world.with('ttl')]`) when removing during iteration.
+- `sceneManager.ts`: named scenes with async lifecycle hooks — `enter(prev)`,
+  `update(dt, t)`, `exit(next)`. `go(name)` cross-fades: a full-screen DOM overlay
+  fades to the transition color (default `#000`), the outgoing `exit` runs, the
+  incoming `enter` runs, then it fades back out. The overlay starts at `opacity:1`
+  so the very first `go()` is a "boot reveal" (no preceding flash). Call
+  `sceneManager.update(dt, t)` each frame (routes to the active scene's `update`).
+  Register chainably: `sm.register('title', {...}).register('game', {...})`. Check
+  `sm.busy` to skip redundant transitions (e.g. the title "click to start" guard).
+  The demo uses a title scene (full-screen DOM overlay, blinking "PRESS ENTER",
+  Enter/click starts) and a game scene (existing content). A "↩ Main menu" GUI
+  button and `window.threej.scenes.go('title')` both return to the title.
 - `debugPanel.ts` helpers are composable — add only the folders a project needs,
   or call `gui.add(...)` directly for anything bespoke.
 
@@ -435,6 +449,7 @@ one meaningful commit per step).
 | `b62a90f` | **Particles / VFX** — `engine/particles.ts`, a one-draw-call `THREE.Points` pool with procedural soft sprites (no texture), per-particle colour/size, ring-buffer recycling. `burst`/`stream`/`update`. Drive kicks up dust on footfalls/jump/land; a "VFX" GUI folder fires Sparkle/Poof bursts; additive blending glows through bloom. |
 | `d9cb2c1` | **Follow camera** — `engine/followCamera.ts`, a damped third-person cam that trails a target and swings behind it. Camera owners are now a strict hierarchy (director > follow > zoom/orbit); the vendor "Follow cam (3rd person)" toggle auto-enables with Drive for a real game feel. |
 | `36f1a0b` | **Talk prompt** — the NPC zone no longer auto-starts; standing in it brightens the ring and shows a "press E to talk" prompt (`#talk-prompt`), and E starts the conversation. Prompt hides while talking / on exit / when drive stops. |
+| TBD | **Scene manager** — `engine/sceneManager.ts` (`createSceneManager`): named scenes `{ enter, update, exit }` + cross-fade transitions (DOM overlay, configurable color/duration). Overlay starts opaque for a "boot reveal"; first `go()` enters and fades out; subsequent calls fade dark → swap → reveal. Demo: `title` scene (full-screen THREEJ card, Enter/click → game) + `game` scene (existing content). GUI "↩ Main menu" + `window.threej.scenes`. |
 
 ---
 
@@ -442,16 +457,15 @@ one meaningful commit per step).
 
 Loosely ordered; pick by what unblocks the most.
 
-- **Wire a real rigged character** — extract a Unity/Mixamo model, load via
-  `assets.loadModel`, drive with an `AnimationMixer` on the loop (and/or a Rapier
-  capsule). The pieces are all in place now.
-- **`engine/input.ts`** — keyboard + Gamepad API (+ nipplejs for mobile), since
-  this is becoming a game engine (the LÖVE `love.keyboard/joystick` equivalent).
-- **`engine/state.ts` save/load** — generalize beyond URL hash (idb-keyval) for
-  save games.
+- **`engine/postfx.ts` growth** — vignette, camera shake, color-grade passes. Low
+  effort, huge feel upgrade; the pmndrs `postprocessing` lib is the upgrade path
+  beyond `three/addons`. Camera shake is especially high-value for combat feedback.
+- **Spatial audio** — Howler has built-in positional audio; just wire
+  `audio.setListener(camera)` + `play3D(name, worldPos)`. Makes ambient scenes feel
+  alive.
+- **Scene content helpers** — utilities for actually building game screens (title
+  menu items, pause screen, game-over screen) using the new scene manager.
 - **GSAP timeline helpers in `engine/`** — reusable entrance/transition tweens.
-- **`engine/postfx.ts` growth** — vignette / DOF / color-grade passes (the pmndrs
-  `postprocessing` lib is the upgrade path beyond `three/addons`).
 - **Tighten TypeScript** — replace the migration's `: any` option-bags with real
   interfaces, module by module.
 - **Perf pass** — instancing for repeated props; frustum/draw-call audit.

@@ -184,6 +184,42 @@ canvas { display: block; }
   backdrop-filter: blur(4px);
 }
 
+/* ── Title screen (scene: title) ── */
+#title-screen {
+  position: fixed; inset: 0; z-index: 90;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(4,5,12,0.94);
+  backdrop-filter: blur(3px);
+  cursor: pointer; pointer-events: all;
+}
+#title-screen[hidden] { display: none; }
+.title-content {
+  text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.title-eyebrow {
+  font-size: 0.62rem; letter-spacing: 0.55em; text-transform: uppercase;
+  color: rgba(170,190,255,0.38);
+}
+.title-name {
+  font-size: clamp(3rem, 10vw, 6rem); letter-spacing: 0.4em; text-transform: uppercase;
+  color: #aabbff;
+  text-shadow: 0 0 80px #aabbff, 0 0 30px #6688ff, 0 0 8px #fff;
+  font-family: 'Courier New', monospace; margin: 6px 0 2px;
+}
+.title-prompt {
+  font-size: 0.74rem; letter-spacing: 0.35em; text-transform: uppercase;
+  color: rgba(200,220,255,0.48); margin-top: 28px;
+  animation: title-blink 2s ease-in-out infinite;
+}
+@keyframes title-blink { 0%,100% { opacity: 0.5 } 50% { opacity: 0.15 } }
+.title-prompt kbd {
+  font-family: inherit; color: rgba(200,220,255,0.8);
+  background: rgba(140,170,255,0.18);
+  border: 1px solid rgba(160,190,255,0.4); border-radius: 4px;
+  padding: 1px 6px;
+}
+
 /* ── Talk prompt (NPC zone) ── */
 #talk-prompt {
   position: fixed; left: 0; right: 0; bottom: 120px;
