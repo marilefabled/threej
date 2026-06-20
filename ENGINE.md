@@ -5,7 +5,7 @@
 > how this project is built and where it's going. See the *Update protocol* at the
 > bottom — keeping this current is part of every change, not an afterthought.
 
-**Last updated:** 2026-06-20 (after root motion)
+**Last updated:** 2026-06-20 (after the state machine)
 
 ---
 
@@ -78,6 +78,7 @@ src/
     ecs.ts              miniplex World + a frame-system registry
     animator.ts         AnimationMixer crossfade controller (named clips, play(name))
     rootMotion.ts       extract planar root-bone displacement → move the character
+    stateMachine.ts     tiny FSM (states + transitions) — drives the animator
     debugPanel.ts       lil-gui panel + composable bloom/light control helpers
     easing.ts           easing helpers
   robot/              the figure (content)
@@ -121,6 +122,7 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 | `ecs.ts` | `createECS()` | `{ world, system(fn), update(dt, t) }` (miniplex `world`) |
 | `animator.ts` | `createAnimator(root)` | `{ add(name, clip), play(name, {fade,loop,timeScale}), update(dt), has, stop, current, currentAction }` |
 | `rootMotion.ts` | `createRootMotion(target, { bone, getTime })` | `{ apply(), reset(), bone }` |
+| `stateMachine.ts` | `createStateMachine(spec, ctx)` | `{ update(dt), set(name), state, time, ctx }` |
 | `debugPanel.ts` | `createDebugPanel({ title, closed })` · `addBloomControls(gui, bloom, renderer)` · `addLightControls(gui, lights)` | a lil-gui `GUI` + folders |
 | `easing.ts` | `easeInOut(t)` | number |
 
@@ -168,6 +170,11 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
   magnitude threshold). The vendor "Root motion" toggle uses it for `W Root` clips;
   otherwise a scripted circle. Next: a state machine (Idle↔Walk↔Run) + a Rapier
   capsule so the vendor bot collides.
+- `stateMachine.ts`: a generic FSM — states with `enter/exit/update` hooks and
+  `transitions: [{ to, when(ctx, timeInState) }]`. `update(dt)` runs the current
+  state then takes the first satisfied transition. A shared `ctx` carries inputs +
+  the animator. The vendor "Wander (AI)" toggle uses it (Idle↔Walk on random
+  timers); pair it with `animator` for Idle↔Walk↔Run character control.
 - `ecs.ts` (miniplex): `world.add({...components})`, query with
   `world.with('a','b')`, `system((world, dt, t) => …)`, drive with
   `ecs.update(dt, t)` from the loop. The demo's dropped props are entities

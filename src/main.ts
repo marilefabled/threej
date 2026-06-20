@@ -17,6 +17,7 @@ import { createAudio } from './engine/audio.js';
 import { createECS } from './engine/ecs.js';
 import { createAnimator } from './engine/animator.js';
 import { createRootMotion } from './engine/rootMotion.js';
+import { createStateMachine } from './engine/stateMachine.js';
 import { createDebugPanel, addBloomControls, addLightControls } from './engine/debugPanel.js';
 
 import { buildRobot } from './robot/robot.js';
@@ -300,7 +301,7 @@ window.addEventListener('resize', () => {
 });
 
 // Devtools handles
-window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, spawnProp, GHOST_FORMS };
+window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, spawnProp, GHOST_FORMS, createStateMachine };
 
 // ── Vendor robot gallery: browse an extracted Unity pack (git-ignored) via
 // public/vendor/manifest.json (see tools/build-vendor-manifest.mjs). The packs
@@ -317,7 +318,8 @@ let walkAngle = 0;            // phase along the scripted walk circle
 const WALK_R = 0.9;           // radius of the wander circle
 const vendorCenter = new THREE.Vector2(-1.7, 2.0 - WALK_R); // so home sits on the circle
 const vendorHome = new THREE.Vector3(vendorCenter.x, 0, vendorCenter.y + WALK_R);
-const vendorOpts = { rootMotion: false };   // toggle: real root motion vs scripted circle
+const vendorOpts = { rootMotion: false, wander: false };  // root motion vs scripted; AI wander
+let vendorWander: any = null;   // wander state machine (built per robot when enabled)
 
 // Load a robot mesh: textured material, normalized scale, animator + the loop
 // hooks (animator update + locomotion). Reused on robot change.
@@ -353,6 +355,10 @@ async function loadVendorRobot(entry: any) {
 
   vendorDispose = loop.onFrame((_t, dt) => {
     vendorAnimator.update(dt);
+
+    // AI: a wander state machine picks Idle/Walk clips on timers (it sets vendorClip
+    // via setVendorClip; the movement below responds).
+    if (vendorOpts.wander && vendorWander) vendorWander.update(dt);
 
     // Root motion: a "W Root" clip carries forward displacement on the root bone;
     // extract it so the animation itself walks the robot. Re-home if it wanders off.
@@ -402,24 +408,44 @@ async function setVendorClip(entry: any, name: string) {
   const animsFor = (n: string) => entryFor(n).animations.map((a: any) => a.name);
   if (!animsFor(pick.robot).includes('Idle')) pick.animation = animsFor(pick.robot)[0];
 
+  // A wander AI: Idle (pause) ↔ Walk (move) on random timers, via the FSM.
+  const playVendor = (n: string) => setVendorClip(entryFor(pick.robot), n);
+  function buildWander() {
+    const anims = animsFor(pick.robot);
+    const idle = anims.find((n: string) => /idle/i.test(n)) ?? anims[0];
+    const walk = anims.find((n: string) => /walk/i.test(n) && /in place/i.test(n))
+      ?? anims.find((n: string) => /walk/i.test(n)) ?? anims[0];
+    return createStateMachine({
+      initial: 'Idle',
+      states: {
+        Idle: { enter: (c: any) => { c.play(idle); c.dur = 1.2 + Math.random() * 2; }, transitions: [{ to: 'Walk', when: (c: any, t: number) => t > c.dur }] },
+        Walk: { enter: (c: any) => { c.play(walk); c.dur = 2 + Math.random() * 2.5; }, transitions: [{ to: 'Idle', when: (c: any, t: number) => t > c.dur }] },
+      },
+    }, { play: playVendor });
+  }
+
   const folder = gui.addFolder('Vendor Robot');
   folder.add(pick, 'robot', names).name('Robot').onChange(async () => {
     const anims = animsFor(pick.robot);
     pick.animation = anims.includes('Idle') ? 'Idle' : anims[0];
     animCtrl = animCtrl.options(anims).name('Animation').onChange(() => setVendorClip(entryFor(pick.robot), pick.animation));
     await loadVendorRobot(entryFor(pick.robot));
-    setVendorClip(entryFor(pick.robot), pick.animation);
+    if (vendorOpts.wander) vendorWander = buildWander(); else setVendorClip(entryFor(pick.robot), pick.animation);
   });
   let animCtrl = folder.add(pick, 'animation', animsFor(pick.robot)).name('Animation')
     .onChange(() => setVendorClip(entryFor(pick.robot), pick.animation));
   folder.add(vendorOpts, 'rootMotion').name('Root motion (W Root clips)')
     .onChange(() => { vendorRoot?.reset(); if (vendorModel) vendorModel.position.copy(vendorHome); });
+  folder.add(vendorOpts, 'wander').name('Wander (AI)')
+    .onChange(() => { vendorWander = vendorOpts.wander ? buildWander() : null; if (!vendorOpts.wander) setVendorClip(entryFor(pick.robot), pick.animation); });
 
   await loadVendorRobot(entryFor(pick.robot));
   await setVendorClip(entryFor(pick.robot), pick.animation);
   // dev/test hooks
   window.threej.vendorSetClip = (n: string) => setVendorClip(entryFor(pick.robot), n);
   window.threej.vendorRootMotion = (on: boolean) => { vendorOpts.rootMotion = on; vendorRoot?.reset(); if (vendorModel) vendorModel.position.copy(vendorHome); };
+  window.threej.vendorWander = (on: boolean) => { vendorOpts.wander = on; vendorWander = on ? buildWander() : null; };
+  window.threej.vendorWanderState = () => vendorWander?.state ?? null;
   window.threej.vendorRobotNames = names;
   console.info(`[vendor] gallery ready — ${manifest.robots.length} robots, crossfade + locomotion`);
 })();
