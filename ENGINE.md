@@ -379,7 +379,7 @@ one meaningful commit per step).
 | `a1f13d6` | **Blend space + smooth facing** — `engine/blendSpace.ts` (1D blend tree); drive locomotion blends Idle/Walk/Run by speed (jump overlaid); facing turns smoothly toward input. |
 | `71f71de` | **Dialogue + cutscene** — `engine/dialogue.ts` (Ink/inkjs wrapper: lines/choices/variables, presentation-agnostic) + `dialogueUI.ts` (DOM box) + `engine/cutscene.ts` (GSAP-backed async director). "Scene" GUI folder plays an intro: camera dollies in, runs a branching conversation, dollies back. |
 | `01ff536` | **Dialogue actions + trigger zones** — line tags (`#anim:wave`) dispatch to `dialogue.command()` handlers (robot reacts mid-line); `dialogueUI.ts` typewriter reveal (click completes, click advances); `engine/trigger.ts` (flat XZ zone, edge enter/exit) — driving the character into an NPC ring on the floor starts a conversation (drive freezes while talking). |
-| _pending_ | **Camera tags + conditional choices** — `#look:NAME` line tag punches the camera to a named framing (reuses `cameraZoom`, no-op mid-cutscene); Ink conditional choices `* { talked } [ … ]` gate options on story state, which now persists across knots (the warden intro changes the yard inmate's choices). |
+| `e7c9e91` | **Camera tags + conditional choices** — `#look:NAME` line tag punches the camera to a named framing (reuses `cameraZoom`, no-op mid-cutscene); Ink conditional choices `* { talked } [ … ]` gate options on story state, which now persists across knots (the warden intro changes the yard inmate's choices). |
 
 ---
 
