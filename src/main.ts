@@ -18,6 +18,7 @@ import { createECS } from './engine/ecs.js';
 import { createAnimator } from './engine/animator.js';
 import { createRootMotion } from './engine/rootMotion.js';
 import { createStateMachine } from './engine/stateMachine.js';
+import { createInput } from './engine/input.js';
 import { createDebugPanel, addBloomControls, addLightControls } from './engine/debugPanel.js';
 
 import { buildRobot } from './robot/robot.js';
@@ -324,8 +325,11 @@ let walkAngle = 0;            // phase along the scripted walk circle
 const WALK_R = 0.9;           // radius of the wander circle
 const vendorCenter = new THREE.Vector2(-1.7, 2.0 - WALK_R); // so home sits on the circle
 const vendorHome = new THREE.Vector3(vendorCenter.x, 0, vendorCenter.y + WALK_R);
-const vendorOpts = { rootMotion: false, wander: false };  // root motion vs scripted; AI wander
+const vendorOpts = { rootMotion: false, wander: false, drive: false };  // root motion; AI wander; WASD drive
 let vendorWander: any = null;   // wander state machine (built per robot when enabled)
+let vendorDrive: any = null;    // drive locomotion FSM (Idle/Walk/Run/Jump)
+const driveCtx = { speed: 0, grounded: true, play: (_n: string) => {} };
+const input = createInput();
 
 // Load a robot mesh: textured material, normalized scale, animator + the loop
 // hooks (animator update + locomotion). Reused on robot change.
@@ -358,12 +362,27 @@ async function loadVendorRobot(entry: any) {
   vendorAnimator = createAnimator(model);
   // root motion fills its `delta` but doesn't move the model — the capsule does.
   vendorRoot = createRootMotion(model, { getTime: () => vendorAnimator.currentAction?.time ?? 0, applyToTarget: false });
-  vendorChar = physics.addCharacter(model, { radius: 0.4, half: 0.5 });
+  vendorChar = physics.addCharacter(model, { radius: 0.4, half: 0.5, feetOffset: vendorGroundY });
   vendorHome.set(vendorCenter.x, vendorGroundY, vendorCenter.y + WALK_R);
   window.threej.vendorRobot = model;
 
   vendorDispose = loop.onFrame((_t, dt) => {
     vendorAnimator.update(dt);
+
+    // ── Drive (WASD/space): you control it — input → capsule, FSM picks clips ──
+    if (vendorOpts.drive) {
+      const a = input.axis();
+      const running = input.down('ShiftLeft') || input.down('ShiftRight');
+      const sp = a.len * (running ? 5.5 : 3.0);
+      if (input.consume('Space')) vendorChar.jump();
+      const r = vendorChar.move(a.x * sp * dt, a.y * sp * dt, dt);
+      if (a.len > 0.05) model.rotation.y = Math.atan2(a.x, a.y);   // face movement
+      driveCtx.speed = a.len * (running ? 1.6 : 1);
+      driveCtx.grounded = r.grounded;
+      vendorDrive?.update(dt);
+      return;
+    }
+
     if (vendorOpts.wander && vendorWander) vendorWander.update(dt);   // AI picks clips
 
     // Compute this frame's desired horizontal step from the active clip...
@@ -380,8 +399,7 @@ async function loadVendorRobot(entry: any) {
     }
 
     // ...then route it through the capsule (collides with walls, shoves crates).
-    vendorChar.move(dx, dz);
-    model.position.y = vendorGroundY;
+    vendorChar.move(dx, dz, dt);
     if (model.position.distanceTo(vendorHome) > 3) { vendorChar.teleport(vendorHome.x, vendorHome.z); vendorRoot.reset(); }
   });
 }
@@ -412,13 +430,17 @@ async function setVendorClip(entry: any, name: string) {
   const animsFor = (n: string) => entryFor(n).animations.map((a: any) => a.name);
   if (!animsFor(pick.robot).includes('Idle')) pick.animation = animsFor(pick.robot)[0];
 
-  // A wander AI: Idle (pause) ↔ Walk (move) on random timers, via the FSM.
+  // Resolve clip names per robot (they vary slightly across the pack).
   const playVendor = (n: string) => setVendorClip(entryFor(pick.robot), n);
-  function buildWander() {
+  const clipFor = (re: RegExp, also?: RegExp) => {
     const anims = animsFor(pick.robot);
-    const idle = anims.find((n: string) => /idle/i.test(n)) ?? anims[0];
-    const walk = anims.find((n: string) => /walk/i.test(n) && /in place/i.test(n))
-      ?? anims.find((n: string) => /walk/i.test(n)) ?? anims[0];
+    return (also && anims.find((n: string) => re.test(n) && also.test(n))) || anims.find((n: string) => re.test(n)) || anims[0];
+  };
+
+  // A wander AI: Idle (pause) ↔ Walk (move) on random timers, via the FSM.
+  function buildWander() {
+    const idle = clipFor(/idle/i);
+    const walk = clipFor(/walk/i, /in place/i);
     return createStateMachine({
       initial: 'Idle',
       states: {
@@ -428,20 +450,51 @@ async function setVendorClip(entry: any, name: string) {
     }, { play: playVendor });
   }
 
+  // Drive FSM: Idle ↔ Walk ↔ Run by speed, Jump when airborne. Reads driveCtx
+  // (speed/grounded updated in the loop from input + the capsule).
+  function buildDrive() {
+    const idle = clipFor(/idle/i);
+    const walk = clipFor(/walk/i, /in place/i);
+    const run = clipFor(/run/i, /in place/i);
+    const jump = clipFor(/jump/i, /in place/i);
+    const air = [{ to: 'Jump', when: (c: any) => !c.grounded }];
+    driveCtx.play = playVendor;
+    return createStateMachine({
+      initial: 'Idle',
+      states: {
+        Idle: { enter: (c: any) => c.play(idle), transitions: [...air, { to: 'Walk', when: (c: any) => c.speed > 0.05 }] },
+        Walk: { enter: (c: any) => c.play(walk), transitions: [...air, { to: 'Run', when: (c: any) => c.speed > 1.05 }, { to: 'Idle', when: (c: any) => c.speed <= 0.05 }] },
+        Run:  { enter: (c: any) => c.play(run),  transitions: [...air, { to: 'Walk', when: (c: any) => c.speed <= 1.05 }] },
+        Jump: { enter: (c: any) => c.play(jump), transitions: [{ to: 'Walk', when: (c: any) => c.grounded && c.speed > 0.05 }, { to: 'Idle', when: (c: any) => c.grounded }] },
+      },
+    }, driveCtx);
+  }
+
   const folder = gui.addFolder('Vendor Robot');
   folder.add(pick, 'robot', names).name('Robot').onChange(async () => {
     const anims = animsFor(pick.robot);
     pick.animation = anims.includes('Idle') ? 'Idle' : anims[0];
     animCtrl = animCtrl.options(anims).name('Animation').onChange(() => setVendorClip(entryFor(pick.robot), pick.animation));
     await loadVendorRobot(entryFor(pick.robot));
-    if (vendorOpts.wander) vendorWander = buildWander(); else setVendorClip(entryFor(pick.robot), pick.animation);
+    if (vendorOpts.drive) vendorDrive = buildDrive();
+    else if (vendorOpts.wander) vendorWander = buildWander();
+    else setVendorClip(entryFor(pick.robot), pick.animation);
   });
   let animCtrl = folder.add(pick, 'animation', animsFor(pick.robot)).name('Animation')
     .onChange(() => setVendorClip(entryFor(pick.robot), pick.animation));
   folder.add(vendorOpts, 'rootMotion').name('Root motion (W Root clips)')
     .onChange(() => { vendorRoot?.reset(); vendorChar?.teleport(vendorHome.x, vendorHome.z); });
-  folder.add(vendorOpts, 'wander').name('Wander (AI)')
-    .onChange(() => { vendorWander = vendorOpts.wander ? buildWander() : null; if (!vendorOpts.wander) setVendorClip(entryFor(pick.robot), pick.animation); });
+  const wanderCtrl = folder.add(vendorOpts, 'wander').name('Wander (AI)')
+    .onChange(() => {
+      if (vendorOpts.wander) { vendorOpts.drive = false; driveCtrl.updateDisplay(); vendorDrive = null; }
+      vendorWander = vendorOpts.wander ? buildWander() : null;
+      if (!vendorOpts.wander) setVendorClip(entryFor(pick.robot), pick.animation);
+    });
+  const driveCtrl = folder.add(vendorOpts, 'drive').name('Drive (WASD/Space)')
+    .onChange(() => {
+      if (vendorOpts.drive) { vendorOpts.wander = false; wanderCtrl.updateDisplay(); vendorWander = null; vendorChar?.teleport(vendorHome.x, vendorHome.z); vendorDrive = buildDrive(); }
+      else { vendorDrive = null; setVendorClip(entryFor(pick.robot), pick.animation); }
+    });
 
   await loadVendorRobot(entryFor(pick.robot));
   await setVendorClip(entryFor(pick.robot), pick.animation);
@@ -450,6 +503,8 @@ async function setVendorClip(entry: any, name: string) {
   window.threej.vendorRootMotion = (on: boolean) => { vendorOpts.rootMotion = on; vendorRoot?.reset(); vendorChar?.teleport(vendorHome.x, vendorHome.z); };
   window.threej.vendorWander = (on: boolean) => { vendorOpts.wander = on; vendorWander = on ? buildWander() : null; };
   window.threej.vendorChar = () => vendorChar;
+  window.threej.vendorDrive = (on: boolean) => { vendorOpts.drive = on; vendorOpts.wander = false; vendorWander = null; driveCtrl.updateDisplay(); wanderCtrl.updateDisplay(); vendorDrive = on ? buildDrive() : null; if (!on) setVendorClip(entryFor(pick.robot), pick.animation); };
+  window.threej.vendorDriveState = () => vendorDrive?.state ?? null;
   window.threej.vendorWanderState = () => vendorWander?.state ?? null;
   window.threej.vendorRobotNames = names;
   console.info(`[vendor] gallery ready — ${manifest.robots.length} robots, crossfade + locomotion`);

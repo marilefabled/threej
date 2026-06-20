@@ -5,7 +5,7 @@
 > how this project is built and where it's going. See the *Update protocol* at the
 > bottom — keeping this current is part of every change, not an afterthought.
 
-**Last updated:** 2026-06-20 (after the capsule character)
+**Last updated:** 2026-06-20 (after input + drivable character)
 
 ---
 
@@ -79,6 +79,7 @@ src/
     animator.ts         AnimationMixer crossfade controller (named clips, play(name))
     rootMotion.ts       extract planar root-bone displacement → move the character
     stateMachine.ts     tiny FSM (states + transitions) — drives the animator
+    input.ts            keyboard + gamepad: axis(), down(code), consume(code)
     debugPanel.ts       lil-gui panel + composable bloom/light control helpers
     easing.ts           easing helpers
   robot/              the figure (content)
@@ -123,6 +124,7 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 | `animator.ts` | `createAnimator(root)` | `{ add(name, clip), play(name, {fade,loop,timeScale}), update(dt), has, stop, current, currentAction }` |
 | `rootMotion.ts` | `createRootMotion(target, { bone, getTime })` | `{ apply(), reset(), bone }` |
 | `stateMachine.ts` | `createStateMachine(spec, ctx)` | `{ update(dt), set(name), state, time, ctx }` |
+| `input.ts` | `createInput({ target, deadzone })` | `{ axis(), down(code), consume(code), gamepadPressed(b), dispose }` |
 | `debugPanel.ts` | `createDebugPanel({ title, closed })` · `addBloomControls(gui, bloom, renderer)` · `addLightControls(gui, lights)` | a lil-gui `GUI` + folders |
 | `easing.ts` | `easeInOut(t)` | number |
 
@@ -176,6 +178,15 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
   magnitude threshold). The vendor "Root motion" toggle uses it for `W Root` clips;
   otherwise a scripted circle. Next: a state machine (Idle↔Walk↔Run) + a Rapier
   capsule so the vendor bot collides.
+- `input.ts`: `axis()` gives a movement vector from WASD/arrows + the gamepad left
+  stick (deadzoned, clamped to unit). `down(code)` is held-state; `consume(code)`
+  is a one-shot edge read for actions (jump on Space). The full character-control
+  stack the vendor "Drive (WASD/Space)" toggle assembles:
+  **clip → `animator` (crossfade) → `stateMachine` (Idle/Walk/Run/Jump) →
+  `input`/`rootMotion` → `physics.addCharacter` (gravity + move-and-slide + jump)
+  → world.** `addCharacter().move(dx, dz, dt)` integrates gravity (snap-to-ground
+  off while ascending) and returns `{ grounded, vy }`; `jump()` adds vertical
+  velocity when grounded.
 - `stateMachine.ts`: a generic FSM — states with `enter/exit/update` hooks and
   `transitions: [{ to, when(ctx, timeInState) }]`. `update(dt)` runs the current
   state then takes the first satisfied transition. A shared `ctx` carries inputs +

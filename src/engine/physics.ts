@@ -53,29 +53,39 @@ export async function createPhysics({ gravity = { x: 0, y: -9.81, z: 0 } }: any 
   }
 
   // A capsule character: a kinematic body + Rapier's KinematicCharacterController
-  // (move-and-slide). move(dx, dz) tries a horizontal step, gets it corrected by
-  // collisions (slides along walls, pushes dynamic bodies), and follows `mesh`.
-  // Vertical is fixed (flat-floor demo); add gravity to `move` for real falling.
-  function addCharacter(mesh: any, { radius = 0.4, half = 0.5, centerY = 0.9, offset = 0.02 }: any = {}) {
+  // (move-and-slide) with gravity + jump. move(dx, dz, dt) applies a horizontal
+  // step plus integrated vertical velocity, corrected by collisions (slides along
+  // walls, pushes dynamic bodies), and follows `mesh`. `feetOffset` is the
+  // mesh.position.y that puts the model's feet on the floor (y=0).
+  function addCharacter(mesh: any, { radius = 0.4, half = 0.5, feetOffset = 0, gravity = 20, jumpSpeed = 7, offset = 0.02 }: any = {}) {
     const controller = world.createCharacterController(offset);
+    controller.enableAutostep(0.3, 0.2, true);
+    controller.enableSnapToGround(0.3);
     controller.setApplyImpulsesToDynamicBodies(true);   // shove crates out of the way
+    const centerY0 = half + radius;                      // capsule bottom rests on floor (y=0)
     const p = mesh.position;
-    const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(p.x, centerY, p.z));
+    const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(p.x, centerY0, p.z));
     const collider = world.createCollider(RAPIER.ColliderDesc.capsule(half, radius), body);
+    let vy = 0, grounded = true;
 
-    function move(dx: number, dz: number) {
-      controller.computeColliderMovement(collider, { x: dx, y: 0, z: dz });
+    function move(dx: number, dz: number, dt = 1 / 60) {
+      vy -= gravity * dt;
+      if (vy > 0) controller.disableSnapToGround(); else controller.enableSnapToGround(0.3);  // don't snap mid-jump
+      controller.computeColliderMovement(collider, { x: dx, y: vy * dt, z: dz });
+      grounded = controller.computedGrounded();
+      if (grounded && vy < 0) vy = 0;
       const c = controller.computedMovement();
       const t = body.translation();
-      const nx = t.x + c.x, nz = t.z + c.z;
-      body.setNextKinematicTranslation({ x: nx, y: t.y, z: nz });
-      mesh.position.x = nx; mesh.position.z = nz;
-      return c;
+      const nx = t.x + c.x, ny = t.y + c.y, nz = t.z + c.z;
+      body.setNextKinematicTranslation({ x: nx, y: ny, z: nz });
+      mesh.position.set(nx, ny - centerY0 + feetOffset, nz);
+      return { grounded, vy };
     }
-    function teleport(x: number, z: number) { body.setNextKinematicTranslation({ x, y: centerY, z }); mesh.position.x = x; mesh.position.z = z; }
+    function jump(v = jumpSpeed) { if (grounded) { vy = v; grounded = false; } }
+    function teleport(x: number, z: number) { vy = 0; body.setNextKinematicTranslation({ x, y: centerY0, z }); mesh.position.set(x, feetOffset, z); }
     function dispose() { world.removeRigidBody(body); world.removeCharacterController(controller); }
 
-    return { body, collider, controller, move, teleport, dispose };
+    return { body, collider, controller, move, jump, teleport, dispose, get grounded() { return grounded; } };
   }
 
   // Advance the simulation and sync meshes. dt is clamped so a stall doesn't
