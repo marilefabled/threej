@@ -294,6 +294,7 @@ one meaningful commit per step).
 | `ecac413` | **miniplex ECS** — `engine/ecs.ts` (World + system registry); dropped props are entities `{mesh,body,ttl}` with sync + ttl-despawn systems. |
 | `7e08714` | **Load a rigged FBX robot** — optional vendor model from an extracted Unity pack (mesh + retargeted clip via AnimationMixer); asset git-ignored. |
 | `31db3ce` | **Vendor robot gallery** — PSD→PNG (sips) + `tools/build-vendor-manifest.mjs`; lil-gui Robot/Animation dropdowns browse the whole pack (15 robots, 275 clips), textured. See §6b. |
+| `7e2c8d5` | **Crossfade animator** — `engine/animator.ts` (named clips + `play(name, {fade})`); vendor Animation dropdown crossfades on the same model; walk/run clips drive a locomotion path. |
 
 ---
 
