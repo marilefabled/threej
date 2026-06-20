@@ -1,0 +1,81 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #07070f; overflow: hidden; font-family: 'Courier New', monospace; }
+canvas { display: block; }
+
+#ui {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 14px; padding: 24px 0 32px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.75));
+  pointer-events: none;
+}
+
+#state-label {
+  font-size: 1.15rem;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: #aabbff;
+  text-shadow: 0 0 28px #aabbff;
+  transition: color 0.25s, text-shadow 0.25s;
+}
+
+#buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 760px;
+  gap: 9px;
+  pointer-events: all;
+}
+
+/* ── Theme picker (top center) ── */
+#theme-bar {
+  position: fixed; top: 18px; left: 0; right: 0;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+#theme-bar .cap {
+  font-size: 0.62rem; letter-spacing: 0.4em; text-transform: uppercase;
+  color: rgba(255,255,255,0.45);
+}
+#swatches { display: flex; gap: 10px; pointer-events: all; }
+.sw {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--c);
+  border: 2px solid rgba(255,255,255,0.25);
+  cursor: pointer; padding: 0;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+.sw:hover { transform: scale(1.15); border-color: rgba(255,255,255,0.6); }
+.sw.active {
+  border-color: #fff;
+  box-shadow: 0 0 14px var(--c), 0 0 4px #fff;
+  transform: scale(1.15);
+}
+
+.btn {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: rgba(255,255,255,0.6);
+  padding: 10px 22px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+  user-select: none;
+}
+.btn:hover {
+  background: rgba(255,255,255,0.09);
+  border-color: rgba(255,255,255,0.4);
+  color: #fff;
+}
+.btn.active {
+  background: rgba(255,255,255,0.1);
+  border-color: var(--btn-color, #fff);
+  color: var(--btn-color, #fff);
+  box-shadow: 0 0 16px var(--btn-color, #fff), inset 0 0 10px rgba(255,255,255,0.04);
+}
