@@ -370,6 +370,11 @@ Loosely ordered; pick by what unblocks the most.
   animations will look detached.
 - **Real browser vs preview color.** The headless preview historically rendered
   darker than Chrome; trust the real browser for final color calls.
+- **Kinematic character rubberbanding.** Render the mesh at the body's *actual*
+  position, never at `body + computedMovement` (the pre-step target) — that lead
+  scales with `dt` and jitters back and forth. And don't let gravity fight
+  snap-to-ground every frame: apply gravity only while airborne and pin the feet
+  to the floor when grounded. (Fixed in `physics.addCharacter`.)
 
 ---
 

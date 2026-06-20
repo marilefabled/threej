@@ -59,8 +59,7 @@ export async function createPhysics({ gravity = { x: 0, y: -9.81, z: 0 } }: any 
   // mesh.position.y that puts the model's feet on the floor (y=0).
   function addCharacter(mesh: any, { radius = 0.4, half = 0.5, feetOffset = 0, gravity = 20, jumpSpeed = 7, offset = 0.02 }: any = {}) {
     const controller = world.createCharacterController(offset);
-    controller.enableAutostep(0.3, 0.2, true);
-    controller.enableSnapToGround(0.3);
+    controller.enableSnapToGround(0.4);
     controller.setApplyImpulsesToDynamicBodies(true);   // shove crates out of the way
     const centerY0 = half + radius;                      // capsule bottom rests on floor (y=0)
     const p = mesh.position;
@@ -69,16 +68,23 @@ export async function createPhysics({ gravity = { x: 0, y: -9.81, z: 0 } }: any 
     let vy = 0, grounded = true;
 
     function move(dx: number, dz: number, dt = 1 / 60) {
-      vy -= gravity * dt;
-      if (vy > 0) controller.disableSnapToGround(); else controller.enableSnapToGround(0.3);  // don't snap mid-jump
-      controller.computeColliderMovement(collider, { x: dx, y: vy * dt, z: dz });
-      grounded = controller.computedGrounded();
-      if (grounded && vy < 0) vy = 0;
-      const c = controller.computedMovement();
+      // Render the mesh at the body's ACTUAL position (post last step). Using the
+      // pre-step target (body + computedMovement) makes the visual lead the physics
+      // by a dt-dependent amount → rubberbanding. So the mesh follows the body. When
+      // grounded, pin feet exactly to the floor (no snap/gravity vertical jitter).
       const t = body.translation();
-      const nx = t.x + c.x, ny = t.y + c.y, nz = t.z + c.z;
-      body.setNextKinematicTranslation({ x: nx, y: ny, z: nz });
-      mesh.position.set(nx, ny - centerY0 + feetOffset, nz);
+      mesh.position.set(t.x, grounded ? feetOffset : t.y - centerY0 + feetOffset, t.z);
+
+      // Vertical: gravity only while airborne; a small constant push keeps ground
+      // contact when grounded (snap-to-ground cancels it) — no gravity/snap jitter.
+      if (grounded && vy <= 0) vy = 0; else vy -= gravity * dt;
+      const dy = (grounded && vy === 0) ? -0.1 : vy * dt;
+      if (vy > 0) controller.disableSnapToGround(); else controller.enableSnapToGround(0.4);  // don't snap mid-jump
+
+      controller.computeColliderMovement(collider, { x: dx, y: dy, z: dz });
+      grounded = controller.computedGrounded();
+      const c = controller.computedMovement();
+      body.setNextKinematicTranslation({ x: t.x + c.x, y: t.y + c.y, z: t.z + c.z });
       return { grounded, vy };
     }
     function jump(v = jumpSpeed) { if (grounded) { vy = v; grounded = false; } }
