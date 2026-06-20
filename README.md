@@ -15,11 +15,14 @@ beside it, and you can change the location and time of day.
 - **9 jail locations** — cell block, yard, cafeteria, library, infirmary,
   solitary, underground, warden's office (procedural "backgrounds"), each with
   its own props and fog.
-- **Floating ghosts** — 8 procedural ghost forms with float / glow / blink, GSAP
-  rise-up entrances on load and on location change.
+- **Floating ghosts** — 8 procedural ghost forms (picker rebuilds the companion
+  ghost) with float / glow / blink and GSAP rise-up entrances.
 - **Bloom** — UnrealBloom post-processing so emissive surfaces (robot core/eyes,
   ghost eyes/glow) bloom.
-- **Period control** — dawn / day / dusk / night mood lighting.
+- **Period + Mood** — dawn/day/dusk/night drives exposure + light intensity;
+  neutral/danger/social/discovery/calm tints the mood light.
+- **lil-gui debug panel** — live Bloom (strength/radius/threshold/exposure) and
+  Lights (ambient/sun/fill/mood) tuning.
 - **Per-animation camera zoom**, orbit controls, ground glow ring, soft shadows,
   rim + fill lighting.
 
@@ -50,6 +53,7 @@ src/
     environment.js    floor · two-layer grid · glow disc · ground ring
     cameraZoom.js     one-shot "fly to a target, hold, return" camera move
     bloom.js          UnrealBloom post-processing pipeline (EffectComposer)
+    debugPanel.js     lil-gui panel + composable bloom/light control helpers
     easing.js         easing helpers
   robot/            the robot
     robot.js          builds the figure from primitives, returns a posable rig
@@ -80,5 +84,6 @@ get the same stage. **`robot/`** and **`jail/`** are the project-specific 3D cod
 ## Stack
 
 - [Three.js](https://threejs.org/) 0.165 + addons (CDN, native ES modules + import map)
-- [GSAP](https://gsap.com/) 3.12 (CDN, for ghost entrances + transitions)
+- [GSAP](https://gsap.com/) 3.12 (ghost entrances + transitions)
+- [lil-gui](https://lil-gui.georgealways.com/) 0.20 (debug panel)
 - Vanilla HTML/CSS/JS — no bundler, no install

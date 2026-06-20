@@ -21,6 +21,20 @@
       <option value="night" selected>Night</option>
     </select>
   </label>
+  <label class="field">
+    <span class="cap">Mood</span>
+    <select id="mood-select">
+      <option value="neutral" selected>Neutral</option>
+      <option value="danger">Danger</option>
+      <option value="social">Social</option>
+      <option value="discovery">Discovery</option>
+      <option value="calm">Calm</option>
+    </select>
+  </label>
+  <label class="field">
+    <span class="cap">Ghost</span>
+    <select id="ghost-select"></select>
+  </label>
 </div>
 
 <div id="theme-bar">
@@ -49,7 +63,8 @@
   "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/",
-    "gsap": "https://esm.sh/gsap@3.12.5"
+    "gsap": "https://esm.sh/gsap@3.12.5",
+    "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.20/dist/lil-gui.esm.min.js"
   }
 }
 </script>

@@ -5,7 +5,8 @@ import * as THREE from 'three';
 // Returns the lights you'll want to animate or recolor later.
 export function addLighting(scene) {
   // Ambient — enough to read the model even in shadow
-  scene.add(new THREE.AmbientLight(0x5577aa, 7.0));
+  const ambient = new THREE.AmbientLight(0x5577aa, 7.0);
+  scene.add(ambient);
 
   // Key — the "sun", casts shadows from the top-right-front
   const sun = new THREE.DirectionalLight(0xffffff, 3.5);
@@ -38,5 +39,5 @@ export function addLighting(scene) {
   bounce.position.set(0, 0.05, 0);
   scene.add(bounce);
 
-  return { sun, fill, rimL, rimR, bounce };
+  return { ambient, sun, fill, rimL, rimR, bounce };
 }

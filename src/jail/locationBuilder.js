@@ -124,8 +124,9 @@ export function buildLocation(locationId) {
       const wallColor = locationId === 'cell_block_b' ? 0x1a1a2a : 0x1e2030;
       const floorColor = 0x141820;
       objects.push(...room(8, 4, 10, wallColor, floorColor));
+      // Back-wall bars only — the camera-side (front) bars are omitted so they
+      // don't sit across the figure's face.
       objects.push(...cellBars(12, 3.2, 0x445566, 0, -4.8));
-      objects.push(...cellBars(12, 3.2, 0x445566, 0, 4.8));
       objects.push(...bunkBed(-2.5, 0, 2));
       objects.push(...bunkBed(2.5, 0, 2));
       objects.push(box(1.2, 0.08, 0.3, 0x667788, 0, 3.88, 0, 0xaabbcc, 0.5));

@@ -9,6 +9,7 @@ import { addLighting } from './engine/lighting.js';
 import { addEnvironment } from './engine/environment.js';
 import { createCameraZoom } from './engine/cameraZoom.js';
 import { createBloom } from './engine/bloom.js';
+import { createDebugPanel, addBloomControls, addLightControls } from './engine/debugPanel.js';
 
 import { buildRobot } from './robot/robot.js';
 import { ANIMATIONS, ZOOM_TARGETS } from './robot/animations.js';
@@ -36,20 +37,22 @@ env.gridCoarse.visible = false;
 
 const robot = buildRobot(scene);
 
-// Jail mood light (recolored by the Period control)
-const moodLight = new THREE.PointLight(0x3344aa, 1.8, 16);
+// Jail mood light — color set by Mood, intensity by Period. Kept fairly close
+// (shorter range) so its tint pools on the figure instead of washing out.
+const moodLight = new THREE.PointLight(0x3344aa, 2.4, 13);
 moodLight.position.set(0, 3.5, 1.5);
 scene.add(moodLight);
 
 // Bloom — makes emissive surfaces (robot core/eyes, ghost eyes/glow) bloom
 const bloom = createBloom(renderer, scene, camera, { strength: 0.5, radius: 0.4, threshold: 1.5 });
 
-// Jail: location geometry + ghosts + period lighting + GSAP transitions
-const jail = createJail(scene, { moodLight, getBloomPass: () => bloom.bloomPass });
+// Jail: location geometry + ghosts + period/mood lighting + GSAP transitions
+const jail = createJail(scene, { moodLight, renderer, getBloomPass: () => bloom.bloomPass });
 jail.setLocation('cell_block_a', { animate: false });
 jail.addGhost({ glowColor: '#33f589', ghostForm: 'classic', size: 'medium' }, { x: 1.85, y: 0.95, z: 0.5 });
 jail.addGhost({ glowColor: '#8899ff', ghostForm: 'wispy',   size: 'small'  }, { x: -1.95, y: 1.15, z: -0.2 });
 jail.setPeriod('night');
+jail.setMood('neutral');
 
 // What a theme recolors
 const themeCtx = {
@@ -94,6 +97,25 @@ locationSelect.addEventListener('change', () => jail.setLocation(locationSelect.
 
 const periodSelect = document.getElementById('period-select');
 periodSelect.addEventListener('change', () => jail.setPeriod(periodSelect.value));
+
+const moodSelect = document.getElementById('mood-select');
+moodSelect.addEventListener('change', () => jail.setMood(moodSelect.value));
+
+// Ghost-form picker drives the primary (front) ghost
+const ghostSelect = document.getElementById('ghost-select');
+GHOST_FORMS.forEach(form => {
+  const opt = document.createElement('option');
+  opt.value = form;
+  opt.textContent = form[0].toUpperCase() + form.slice(1);
+  ghostSelect.appendChild(opt);
+});
+ghostSelect.value = 'classic';
+ghostSelect.addEventListener('change', () => jail.setGhostForm(0, ghostSelect.value));
+
+// ── Debug panel (lil-gui) — live bloom + lighting tuning ──
+const gui = createDebugPanel({ title: 'Engine' });
+addBloomControls(gui, bloom, renderer);
+addLightControls(gui, { ...lights, moodLight });
 
 // Initial selection
 ui.selectTheme(0);
