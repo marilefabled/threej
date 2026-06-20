@@ -20,6 +20,9 @@ import { createRootMotion } from './engine/rootMotion.js';
 import { createStateMachine } from './engine/stateMachine.js';
 import { createInput } from './engine/input.js';
 import { createBlend1D } from './engine/blendSpace.js';
+import { createDialogue, compileInk } from './engine/dialogue.js';
+import { createDirector } from './engine/cutscene.js';
+import { createDialogueUI } from './dialogueUI.js';
 import { createDebugPanel, addBloomControls, addLightControls } from './engine/debugPanel.js';
 
 import { buildRobot } from './robot/robot.js';
@@ -265,6 +268,47 @@ function applyConfig(cfg) {
 // Load from the URL build code (falling back to defaults for anything absent)
 applyConfig(urlState.read());
 
+// ── Dialogue + cutscene (Ink) ──
+const INK = `
+VAR talked = false
+
+=== cell_intro ===
+Warden: So. You're the new resident of Block A.
+Warden: Most folks keep their heads down. You look like trouble.
+* [ "I'm not staying long." ]
+    ~ talked = true
+    You: I'm not staying long.
+    Warden: That's what they all say.
+    -> warn
+* [ Say nothing. ]
+    Warden: The quiet type. Smart.
+    -> warn
+
+=== warn ===
+Warden: The robots run the yard after dark. Stay in your cell.
+Warden: And whatever you do — don't touch the crates.
+-> END
+`;
+const dialogue = createDialogue(compileInk(INK));
+createDialogueUI(dialogue);
+const director = createDirector({ camera, dialogue });
+
+// A scripted intro: dolly the camera in, run the conversation, dolly back. Runs
+// through director.play so director.active is true (the loop hands the camera over).
+function playIntro() {
+  if (director.active) return;
+  controls.enabled = false;
+  const home = camera.position.clone();
+  return director.play(async (cx: any) => {
+    await cx.to(camera.position, { x: 0.4, y: 1.85, z: 5.0, duration: 1.3, ease: 'power2.inOut', onUpdate: () => camera.lookAt(0, 1.45, 0) });
+    await cx.say('cell_intro');
+    await cx.to(camera.position, { x: home.x, y: home.y, z: home.z, duration: 1.0, ease: 'power2.inOut', onUpdate: () => camera.lookAt(0, 1.6, 0) });
+  }).then(() => { controls.enabled = true; });
+}
+const sceneFolder = gui.addFolder('Scene');
+sceneFolder.add({ play: () => playIntro() }, 'play').name('Play intro cutscene');
+sceneFolder.add({ skip: () => { dialogue.cancel(); director.skip(); } }, 'skip').name('Skip');
+
 // ── Render loop ──
 const loop = createLoop(renderer);
 
@@ -295,7 +339,7 @@ loop.onFrame((t) => {
 });
 
 // Camera zoom (don't force lookAt while spinning)
-loop.onFrame((t, dt) => zoom.update(dt, curAnim !== 'spin'));
+loop.onFrame((t, dt) => { if (!director.active) zoom.update(dt, curAnim !== 'spin'); });
 
 // Draw through the bloom composer — once, after every update above
 loop.setRender(() => bloom.render());
@@ -308,7 +352,7 @@ window.addEventListener('resize', () => {
 });
 
 // Devtools handles
-window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, spawnProp, GHOST_FORMS, createStateMachine };
+window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, dialogue, director, playIntro, spawnProp, GHOST_FORMS, createStateMachine };
 
 // ── Vendor robot gallery: browse an extracted Unity pack (git-ignored) via
 // public/vendor/manifest.json (see tools/build-vendor-manifest.mjs). The packs
