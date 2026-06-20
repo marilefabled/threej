@@ -417,7 +417,9 @@ async function setVendorClip(entry: any, name: string) {
   vendorClip = info.name;
   vendorAnimator.play(info.name, { fade: 0.35 });
   vendorRoot?.reset();          // re-prime root motion for the new clip
-  vendorChar?.teleport(vendorHome.x, vendorHome.z);   // start each clip from home
+  // Only reset to home when previewing a clip from the dropdown — NOT while driving
+  // or wandering, where clip changes happen mid-movement (else it snaps home).
+  if (!vendorOpts.drive && !vendorOpts.wander) vendorChar?.teleport(vendorHome.x, vendorHome.z);
 }
 
 (async () => {
