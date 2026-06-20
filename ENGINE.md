@@ -5,7 +5,7 @@
 > how this project is built and where it's going. See the *Update protocol* at the
 > bottom — keeping this current is part of every change, not an afterthought.
 
-**Last updated:** 2026-06-20 (after input + drivable character)
+**Last updated:** 2026-06-20 (after the blend space)
 
 ---
 
@@ -79,6 +79,7 @@ src/
     animator.ts         AnimationMixer crossfade controller (named clips, play(name))
     rootMotion.ts       extract planar root-bone displacement → move the character
     stateMachine.ts     tiny FSM (states + transitions) — drives the animator
+    blendSpace.ts       1D animation blend ("blend tree"): set(x) weights clips
     input.ts            keyboard + gamepad: axis(), down(code), consume(code)
     debugPanel.ts       lil-gui panel + composable bloom/light control helpers
     easing.ts           easing helpers
@@ -124,6 +125,7 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 | `animator.ts` | `createAnimator(root)` | `{ add(name, clip), play(name, {fade,loop,timeScale}), update(dt), has, stop, current, currentAction }` |
 | `rootMotion.ts` | `createRootMotion(target, { bone, getTime })` | `{ apply(), reset(), bone }` |
 | `stateMachine.ts` | `createStateMachine(spec, ctx)` | `{ update(dt), set(name), state, time, ctx }` |
+| `blendSpace.ts` | `createBlend1D(mixer, stops, { syncPhase })` | `{ set(x), setMaster(w), master, items }` |
 | `input.ts` | `createInput({ target, deadzone })` | `{ axis(), down(code), consume(code), gamepadPressed(b), dispose }` |
 | `debugPanel.ts` | `createDebugPanel({ title, closed })` · `addBloomControls(gui, bloom, renderer)` · `addLightControls(gui, lights)` | a lil-gui `GUI` + folders |
 | `easing.ts` | `easeInOut(t)` | number |
@@ -187,6 +189,12 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
   → world.** `addCharacter().move(dx, dz, dt)` integrates gravity (snap-to-ground
   off while ascending) and returns `{ grounded, vy }`; `jump()` adds vertical
   velocity when grounded.
+- `blendSpace.ts`: a 1D blend tree over the mixer. Place clips at parameter values
+  (`Idle@0, Walk@1, Run@2`); `set(x)` weights the two bracketing clips so motion
+  blends continuously (no threshold pop). `setMaster(w)` scales the whole blend —
+  the drive mode fades it out and a jump clip in while airborne. `syncPhase` lines
+  the active clips' footfalls up so walk↔run doesn't slide. Pairs with
+  `stateMachine` (locomotion blend tree *inside* a movement state).
 - `stateMachine.ts`: a generic FSM — states with `enter/exit/update` hooks and
   `transitions: [{ to, when(ctx, timeInState) }]`. `update(dt)` runs the current
   state then takes the first satisfied transition. A shared `ctx` carries inputs +
