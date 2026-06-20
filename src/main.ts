@@ -8,6 +8,7 @@ import { createScene } from './engine/scene.js';
 import { addLighting } from './engine/lighting.js';
 import { addEnvironment } from './engine/environment.js';
 import { createCameraZoom } from './engine/cameraZoom.js';
+import { createFollowCamera } from './engine/followCamera.js';
 import { createBloom } from './engine/bloom.js';
 import { createLoop } from './engine/loop.js';
 import { createAssets } from './engine/assets.js';
@@ -321,7 +322,7 @@ const LOOK_TARGETS: Record<string, THREE.Vector3> = {
   crates: new THREE.Vector3(0, 3.6, 7.5),    // pull wide
 };
 dialogue.command('look', (name: string) => {
-  if (director.active) return;
+  if (director.active || followCam?.enabled) return;   // another driver owns the camera
   const p = LOOK_TARGETS[name];
   if (p) zoom.trigger(p);
 });
@@ -388,8 +389,12 @@ loop.onFrame((t) => {
   env.glowDisc.material.opacity = 0.1 + Math.sin(t * 1.5) * 0.04;
 });
 
-// Camera zoom (don't force lookAt while spinning)
-loop.onFrame((t, dt) => { if (!director.active) zoom.update(dt, curAnim !== 'spin'); });
+// Camera: cutscene director > follow cam > one-shot zoom (mutually exclusive owners)
+loop.onFrame((t, dt) => {
+  if (director.active) return;                         // a cutscene owns the camera
+  if (followCam?.enabled) { followCam.update(dt); return; }   // third-person follow
+  zoom.update(dt, curAnim !== 'spin');                 // default: free orbit + anim fly-ins
+});
 
 // Draw through the bloom composer — once, after every update above
 loop.setRender(() => bloom.render());
@@ -420,7 +425,8 @@ let walkAngle = 0;            // phase along the scripted walk circle
 const WALK_R = 0.9;           // radius of the wander circle
 const vendorCenter = new THREE.Vector2(-1.7, 2.0 - WALK_R); // so home sits on the circle
 const vendorHome = new THREE.Vector3(vendorCenter.x, 0, vendorCenter.y + WALK_R);
-const vendorOpts = { rootMotion: false, wander: false, drive: false };  // root motion; AI wander; WASD drive
+const vendorOpts = { rootMotion: false, wander: false, drive: false, follow: false };  // root motion; AI wander; WASD drive; third-person cam
+let followCam: any = null;      // third-person follow camera (targets the vendor model)
 let vendorWander: any = null;   // wander state machine (built per robot when enabled)
 let vendorBlend: any = null;       // drive locomotion blend (Idle/Walk/Run by speed)
 let vendorJumpAction: any = null;  // jump clip, overlaid on the blend when airborne
@@ -460,6 +466,8 @@ async function loadVendorRobot(entry: any) {
   vendorRoot = createRootMotion(model, { getTime: () => vendorAnimator.currentAction?.time ?? 0, applyToTarget: false });
   vendorChar = physics.addCharacter(model, { radius: 0.4, half: 0.5, feetOffset: vendorGroundY });
   vendorHome.set(vendorCenter.x, vendorGroundY, vendorCenter.y + WALK_R);
+  followCam = createFollowCamera(camera, { target: model, offset: new THREE.Vector3(0, 2.4, -4.6), lookHeight: 1.1, stiffness: 5 });
+  if (vendorOpts.follow) { followCam.enabled = true; followCam.snap(); }   // re-target after a robot swap
   window.threej.vendorRobot = model;
 
   vendorDispose = loop.onFrame((_t, dt) => {
@@ -608,11 +616,19 @@ async function setVendorClip(entry: any, name: string) {
       vendorWander = vendorOpts.wander ? buildWander() : null;
       if (!vendorOpts.wander) setVendorClip(entryFor(pick.robot), pick.animation);
     });
+  function setFollow(on: boolean) {
+    vendorOpts.follow = on;
+    if (followCam) { followCam.enabled = on; if (on) followCam.snap(); }
+    controls.enabled = !on;                          // follow owns the camera; release orbit when off
+    followCtrl?.updateDisplay();
+  }
   const driveCtrl = folder.add(vendorOpts, 'drive').name('Drive (WASD/Space)')
     .onChange(async () => {
-      if (vendorOpts.drive) { vendorOpts.wander = false; wanderCtrl.updateDisplay(); vendorWander = null; vendorChar?.teleport(vendorHome.x, vendorHome.z); await buildDriveBlend(); }
-      else { stopDrive(); setVendorClip(entryFor(pick.robot), pick.animation); }
+      if (vendorOpts.drive) { vendorOpts.wander = false; wanderCtrl.updateDisplay(); vendorWander = null; vendorChar?.teleport(vendorHome.x, vendorHome.z); await buildDriveBlend(); setFollow(true); }
+      else { stopDrive(); setFollow(false); setVendorClip(entryFor(pick.robot), pick.animation); }
     });
+  const followCtrl = folder.add(vendorOpts, 'follow').name('Follow cam (3rd person)')
+    .onChange(() => setFollow(vendorOpts.follow));
 
   await loadVendorRobot(entryFor(pick.robot));
   await setVendorClip(entryFor(pick.robot), pick.animation);
@@ -621,7 +637,8 @@ async function setVendorClip(entry: any, name: string) {
   window.threej.vendorRootMotion = (on: boolean) => { vendorOpts.rootMotion = on; vendorRoot?.reset(); vendorChar?.teleport(vendorHome.x, vendorHome.z); };
   window.threej.vendorWander = (on: boolean) => { vendorOpts.wander = on; vendorWander = on ? buildWander() : null; };
   window.threej.vendorChar = () => vendorChar;
-  window.threej.vendorDrive = async (on: boolean) => { vendorOpts.drive = on; vendorOpts.wander = false; vendorWander = null; driveCtrl.updateDisplay(); wanderCtrl.updateDisplay(); if (on) { vendorChar?.teleport(vendorHome.x, vendorHome.z); await buildDriveBlend(); } else { stopDrive(); setVendorClip(entryFor(pick.robot), pick.animation); } };
+  window.threej.vendorDrive = async (on: boolean) => { vendorOpts.drive = on; vendorOpts.wander = false; vendorWander = null; driveCtrl.updateDisplay(); wanderCtrl.updateDisplay(); if (on) { vendorChar?.teleport(vendorHome.x, vendorHome.z); await buildDriveBlend(); setFollow(true); } else { stopDrive(); setFollow(false); setVendorClip(entryFor(pick.robot), pick.animation); } };
+  window.threej.vendorFollow = (on: boolean) => setFollow(on);
   window.threej.vendorBlend = () => vendorBlend;
   window.threej.vendorWanderState = () => vendorWander?.state ?? null;
   window.threej.vendorRobotNames = names;
