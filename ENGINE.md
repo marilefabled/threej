@@ -219,6 +219,7 @@ one meaningful commit per step).
 | `f220028` | **`engine/loop.js`** — render-loop registry (onFrame/setRender, clamped dt, monotonic t); main.js stops hand-rolling the loop; robot anim-time separated from continuous world-time. |
 | `4e09b3b` | **Docs** — `ENGINE.md` living doc + `CLAUDE.md`/`AGENTS.md` agent front-doors. |
 | `f39777e` | **`engine/assets.js`** — Promise-based GLTF/texture loader (deduped cache, progress manager, skinning-safe clone, lazy DRACO). The doorway to real Blender/Mixamo models; wired as `window.threej.assets`. |
+| `a9afdf3` | **Unity asset pipeline** — `tools/unpack-unitypackage.mjs` (zero-dep extractor for `.unitypackage` files) + `assets.js` extended to FBX/OBJ/TGA with extension dispatch. See §6b. |
 
 ---
 
