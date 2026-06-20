@@ -331,6 +331,7 @@ one meaningful commit per step).
 | `76ef87a` | **Root motion** — `engine/rootMotion.ts` extracts root-bone displacement (unit-independent, loop-safe) → the animation walks the character; vendor "Root motion" toggle for `W Root` clips. |
 | `23e272b` | **State machine** — `engine/stateMachine.ts` (states + transitions); vendor "Wander (AI)" toggle runs an Idle↔Walk FSM driving the animator. |
 | `3b29740` | **Capsule character** — `physics.addCharacter` (Rapier KinematicCharacterController) + `addStaticBox` walls; the vendor bot routes locomotion through it, colliding with walls + shoving crates. |
+| `5bd8ff6` | **Input + drivable character** — `engine/input.ts` (WASD/gamepad); capsule gains gravity + jump; a "Drive (WASD/Space)" toggle drives the vendor bot via a Idle/Walk/Run/Jump FSM. |
 
 ---
 
