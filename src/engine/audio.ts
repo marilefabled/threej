@@ -56,5 +56,39 @@ export function createAudio({ volume = 0.6 }: any = {}) {
   const setVolume = (v: number) => Howler.volume(v);
   const mute = (m: boolean) => Howler.mute(m);
 
-  return { Howler, sounds, load, tone, play, setVolume, mute, toneWav };
+  // Update the Web Audio listener position and orientation. Call every frame after
+  // positioning the camera so 3D sounds pan/attenuate from the right point.
+  //   audio.setListener(camera.position, forwardVec, upVec)
+  const setListener = (
+    pos:      { x: number; y: number; z: number },
+    forward?: { x: number; y: number; z: number },
+    up?:      { x: number; y: number; z: number },
+  ) => {
+    Howler.pos(pos.x, pos.y, pos.z);
+    if (forward && up) Howler.orientation(forward.x, forward.y, forward.z, up.x, up.y, up.z);
+  };
+
+  // Play a named sound at a world-space position. Attenuates with distance from the
+  // listener set via setListener(). Raise refDistance for room-scale scenes.
+  //   audio.play3D('thud', mesh.position, { rate: 0.9, refDistance: 4 })
+  const play3D = (
+    name: string,
+    pos:  { x: number; y: number; z: number },
+    opts: { rate?: number; volume?: number; refDistance?: number; rolloffFactor?: number } = {},
+  ): number | undefined => {
+    const s = sounds[name];
+    if (!s) return undefined;
+    const id = s.play();
+    if (id !== undefined) {
+      s.pos(pos.x, pos.y, pos.z, id);
+      if (opts.rate != null)        s.rate(opts.rate, id);
+      if (opts.volume != null)      s.volume(opts.volume, id);
+      if (opts.refDistance != null || opts.rolloffFactor != null) {
+        s.pannerAttr({ refDistance: opts.refDistance ?? 1, rolloffFactor: opts.rolloffFactor ?? 1 }, id);
+      }
+    }
+    return id;
+  };
+
+  return { Howler, sounds, load, tone, play, play3D, setListener, setVolume, mute, toneWav };
 }

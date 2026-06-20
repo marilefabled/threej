@@ -34,6 +34,8 @@ import { createSceneManager } from './engine/sceneManager.js';
 import { createEvents } from './engine/events.js';
 import { createTimers } from './engine/timer.js';
 import { createShake } from './engine/shake.js';
+import { createPool } from './engine/pool.js';
+import { createRaycaster } from './engine/raycast.js';
 import { createDebugPanel, addBloomControls, addLightControls } from './engine/debugPanel.js';
 
 import { buildRobot } from './robot/robot.js';
@@ -153,6 +155,25 @@ const timer = createTimers();
 // update() is called LAST in the camera frame callback so it offsets on top.
 const shake = createShake(camera, { maxOffset: 0.18, maxRoll: 0.05, traumaDecay: 1.5 });
 
+// ── Object pool ── 12 orb meshes pre-allocated; acquired/released for burst demo.
+// reset() removes from scene + hides so they're truly inert while pooled.
+const orbGeo = new THREE.SphereGeometry(0.14, 8, 6);
+const orbMat = new THREE.MeshStandardMaterial({ color: 0xff5522, emissive: 0xff2200, emissiveIntensity: 0.7, roughness: 0.4 });
+const orbPool = createPool<THREE.Mesh>(
+  () => new THREE.Mesh(orbGeo, orbMat),
+  { size: 12, reset: (m) => { m.visible = false; scene.remove(m); } },
+);
+
+// ── Raycaster ── drag-safe click-on-3D. Clicking the static robot plays a blip,
+// adds a light shake, and bursts sparkles at the exact hit point on the mesh.
+const raycast = createRaycaster(camera, renderer);
+raycast.onClick([robot.rig.fig], (hit) => {
+  if (!hit) return;
+  audio.play('blip');
+  shake.addTrauma(0.12);
+  vfx.burst(hit.point, 10, { speed: 1.8, spread: 0.4, up: 0.5, life: 0.5, size: 0.16, color: 0xaaccff });
+}, { recursive: true });
+
 // HUD: a stamina meter (drive) + a world-anchored nameplate over the driven robot.
 const hud = createHUD(camera);
 const staminaBar = hud.bar({ anchor: 'bottom-left', x: 20, y: 120, width: 190, label: 'Stamina', color: '#7fe0a0' });
@@ -256,7 +277,7 @@ function spawnProp() {
   // ECS owns the prop: physics body (sync + ttl handled by systems below)
   const body = physics.addDynamic(mesh, shape, { restitution: ball ? 0.55 : 0.25, link: false });
   ecs.world.add({ mesh, body, ttl: 9 });
-  audio.play('thud', { rate: 0.85 + Math.random() * 0.4 });   // vary pitch per drop
+  audio.play3D('thud', mesh.position, { rate: 0.85 + Math.random() * 0.4, refDistance: 3 });
 }
 function clearProps() {
   for (const e of [...ecs.world.with('mesh', 'body')]) { scene.remove(e.mesh); physics.remove(e.body); ecs.world.remove(e); }
@@ -432,6 +453,18 @@ vfxFolder.add({ timerDemo: () => {
   timer.after(0.5, () => shake.addTrauma(0.5));
   timer.after(1.0, () => shake.addTrauma(0.8));
 }}, 'timerDemo').name('Timer: escalating shakes');
+// Pool demo: acquire 5 orbs, place them in a ring, release each after 1.5 s.
+// Watch console: pool warns if exhausted; available count drops then recovers.
+vfxFolder.add({ orbBurst: () => {
+  for (let i = 0; i < 5; i++) {
+    const orb = orbPool.acquire();
+    const a = (i / 5) * Math.PI * 2;
+    orb.position.set(Math.cos(a) * 1.4, 1.8, Math.sin(a) * 1.4);
+    orb.visible = true;
+    scene.add(orb);
+    timer.after(1.5, () => orbPool.release(orb));
+  }
+}}, 'orbBurst').name('Pool: orb burst (12 pre-alloc)');
 
 // ── Data-driven levels (engine/level.ts spawns from LEVELS data) ──
 const levelLoader = createLevelLoader(scene, {
@@ -551,6 +584,16 @@ loop.onFrame((t, dt) => {
 // Game-loop timers (after, every, tween) — must tick each frame.
 loop.onFrame((_, dt) => timer.update(dt));
 
+// Spatial audio: sync the Web Audio listener with the camera so 3D sounds pan
+// and attenuate relative to where the player is looking. Pre-allocated vectors.
+const _audioFwd = new THREE.Vector3();
+const _audioUp  = new THREE.Vector3();
+loop.onFrame(() => {
+  _audioFwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
+  _audioUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  audio.setListener(camera.position, _audioFwd, _audioUp);
+});
+
 // Scene manager: route update to the active scene each frame
 loop.onFrame((t, dt) => scenes.update(dt, t));
 
@@ -568,7 +611,7 @@ window.addEventListener('resize', () => {
 });
 
 // Devtools handles
-window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, dialogue, director, playIntro, npcTrigger, vfx, levelLoader, loadLevel, hud, saves, scenes, events, timer, shake, getCurAnim: () => curAnim, spawnProp, GHOST_FORMS, createStateMachine };
+window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, dialogue, director, playIntro, npcTrigger, vfx, levelLoader, loadLevel, hud, saves, scenes, events, timer, shake, orbPool, raycast, getCurAnim: () => curAnim, spawnProp, GHOST_FORMS, createStateMachine };
 
 // ── Vendor robot gallery: browse an extracted Unity pack (git-ignored) via
 // public/vendor/manifest.json (see tools/build-vendor-manifest.mjs). The packs

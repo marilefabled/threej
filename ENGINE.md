@@ -5,7 +5,7 @@
 > how this project is built and where it's going. See the *Update protocol* at the
 > bottom — keeping this current is part of every change, not an afterthought.
 
-**Last updated:** 2026-06-20 (after events / timer / shake)
+**Last updated:** 2026-06-20 (after pool / raycast / spatial audio)
 
 ---
 
@@ -94,6 +94,8 @@ src/
     events.ts           typed pub/sub bus: on/once/off/emit/clear/count
     timer.ts            game-loop timers: after/every/tween; pauses with the loop
     shake.ts            trauma-model camera shake: addTrauma(0..1), decays each frame
+    pool.ts             generic object pool: acquire/release; zero GC on the hot path
+    raycast.ts          click-on-3D: pick/pickAll/pickNDC/onClick/onHover + drag guard
     debugPanel.ts       lil-gui panel + composable bloom/light control helpers
     easing.ts           easing helpers
   robot/              the figure (content)
@@ -139,7 +141,7 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 | `assets.ts` | `createAssets({ basePath, onProgress, onLoad, onError })` | `{ loadGLTF, loadModel, loadTexture, loadAll, enableDraco, manager, clear }` |
 | `state.ts` | `createUrlState({ debounce })` · `encodeState(obj)` · `decodeState(str)` | `{ read(), write(obj), encode, decode }` |
 | `physics.ts` | `await createPhysics({ gravity })` | `{ world, step(dt), addGround, addStaticBox, addDynamic(mesh,shape,{link}), addCharacter(mesh,{radius,half}), remove, links }` |
-| `audio.ts` | `createAudio({ volume })` · `toneWav(params)` | `{ load, tone, play, setVolume, mute, sounds, Howler }` |
+| `audio.ts` | `createAudio({ volume })` · `toneWav(params)` | `{ load, tone, play, play3D, setListener, setVolume, mute, sounds, Howler }` |
 | `ecs.ts` | `createECS()` | `{ world, system(fn), update(dt, t) }` (miniplex `world`) |
 | `animator.ts` | `createAnimator(root)` | `{ add(name, clip), play(name, {fade,loop,timeScale}), update(dt), has, stop, current, currentAction }` |
 | `rootMotion.ts` | `createRootMotion(target, { bone, getTime })` | `{ apply(), reset(), bone }` |
@@ -153,6 +155,8 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 | `events.ts` | `createEvents<Schema>()` | `{ on(name, fn)→unsub, once(name, fn)→unsub, off(name, fn), emit(name, payload?), clear(name?), count(name?) }` |
 | `timer.ts` | `createTimers()` | `{ after(s, fn)→handle, every(s, fn, {times?})→handle, tween(s, fn(p), {ease?,onComplete?})→handle, cancel(h), cancelAll(), update(dt), pending }` |
 | `shake.ts` | `createShake(camera, { maxOffset, maxRoll, traumaDecay })` | `{ addTrauma(amount), update(dt), reset(), trauma, enabled }` |
+| `pool.ts` | `createPool<T>(factory, { size, reset, warn })` | `{ acquire()→T, release(obj), releaseAll(), forEach(fn), active, available, size }` |
+| `raycast.ts` | `createRaycaster(camera, renderer)` | `{ pick(e, objects, opts?)→hit\|null, pickAll, pickNDC, onClick(objects, fn, opts?)→off, onHover(objects, fn, opts?)→off, raycaster }` |
 | `debugPanel.ts` | `createDebugPanel({ title, closed })` · `addBloomControls(gui, bloom, renderer)` · `addLightControls(gui, lights)` | a lil-gui `GUI` + folders |
 | `easing.ts` | `easeInOut(t)` | number |
 
@@ -337,6 +341,43 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
   The demo uses a title scene (full-screen DOM overlay, blinking "PRESS ENTER",
   Enter/click starts) and a game scene (existing content). A "↩ Main menu" GUI
   button and `window.threej.scenes.go('title')` both return to the title.
+- `pool.ts`: generic object pool for any `T`. `createPool(factory, { size, reset })`
+  pre-warms `size` objects via `factory()` at startup (one allocation burst, then
+  zero allocations on the hot path). `acquire()` returns a free object or grows
+  with a console warning if exhausted. `release(obj)` calls your `reset()` (hide,
+  remove from scene, zero velocity — whatever "blank slate" means for `T`) then
+  returns it. `releaseAll()` returns everything at once (good for level-clear).
+  `forEach(fn)` iterates all currently active objects — use this for per-frame
+  updates instead of your own Set. Pairs with `timer.after` for auto-return:
+  `timer.after(2, () => pool.release(bullet))`. Demo: 12 pre-allocated orb meshes,
+  "Pool: orb burst" button in the VFX GUI fires 5 in a ring, each released after 1.5 s.
+- `raycast.ts`: wraps `THREE.Raycaster` with mouse/pointer helpers and a drag-
+  distance guard. `pick(e, objects, { recursive })` returns the closest
+  `THREE.Intersection` or `null`. `pickAll` returns every hit. `pickNDC(x, y, objects)`
+  picks from NDC coordinates — use this for crosshair / controller reticles (pass
+  `0, 0` for screen centre). `onClick(objects | () => objects, fn, { recursive, maxDrag })`
+  attaches a click listener to the renderer canvas; if the pointer moved more than
+  `maxDrag` pixels (default 5) between mousedown and click, it skips the handler
+  (orbit drags don't accidentally trigger picks). `onHover` does the same for
+  `pointermove`. Both return cleanup functions. The demo wires `onClick([robot.rig],
+  hit => { audio.play('blip'); shake.addTrauma(0.12); vfx.burst(hit.point, …) },
+  { recursive: true })` — clicking any part of the static robot fires a tactile response.
+- `audio.ts` (spatial audio): `play3D(name, pos, { rate, volume, refDistance,
+  rolloffFactor })` plays a sound at a world-space `{x,y,z}` position — Howler sets
+  up a Web Audio `PannerNode`. The sound attenuates with distance from the listener.
+  `setListener(pos, forwardVec, upVec)` updates `Howler.pos()` / `Howler.orientation()`
+  (the Web Audio `AudioListener`). Call it once per frame after positioning the camera:
+  ```ts
+  const fwd = new THREE.Vector3(), up = new THREE.Vector3()
+  loop.onFrame(() => {
+    fwd.set(0,0,-1).applyQuaternion(camera.quaternion)
+    up.set(0,1,0).applyQuaternion(camera.quaternion)
+    audio.setListener(camera.position, fwd, up)
+  })
+  ```
+  Raise `refDistance` (default 1) for room-scale scenes where the default drop-off
+  is too aggressive. Demo: physics prop `thud` is now `play3D` (panned from where
+  it lands); the listener syncs to the camera each frame.
 - `debugPanel.ts` helpers are composable — add only the folders a project needs,
   or call `gui.add(...)` directly for anything bespoke.
 
@@ -485,7 +526,8 @@ one meaningful commit per step).
 | `d9cb2c1` | **Follow camera** — `engine/followCamera.ts`, a damped third-person cam that trails a target and swings behind it. Camera owners are now a strict hierarchy (director > follow > zoom/orbit); the vendor "Follow cam (3rd person)" toggle auto-enables with Drive for a real game feel. |
 | `36f1a0b` | **Talk prompt** — the NPC zone no longer auto-starts; standing in it brightens the ring and shows a "press E to talk" prompt (`#talk-prompt`), and E starts the conversation. Prompt hides while talking / on exit / when drive stops. |
 | TBD | **Scene manager** — `engine/sceneManager.ts` (`createSceneManager`): named scenes `{ enter, update, exit }` + cross-fade transitions (DOM overlay, configurable color/duration). Overlay starts opaque for a "boot reveal"; first `go()` enters and fades out; subsequent calls fade dark → swap → reveal. Demo: `title` scene (full-screen THREEJ card, Enter/click → game) + `game` scene (existing content). GUI "↩ Main menu" + `window.threej.scenes`. |
-| TBD | **Events / Timer / Camera shake** — three universal boilerplate modules. `engine/events.ts` (`createEvents<Schema>`): typed pub/sub bus; `on/once/off/emit/clear/count`; handler errors isolated per listener; `on()` returns an unsubscribe fn. `engine/timer.ts` (`createTimers`): loop-dt-based `after/every/tween` timers (pause with the loop; `every` handles large-dt missed intervals; `tween` drives a 0→1 progress with optional easing). `engine/shake.ts` (`createShake`): trauma-model camera shake (`addTrauma`, decays per frame at `trauma²` magnitude, camera-local right/up/roll offset, call LAST in camera callback). Demo: jump/land emit `player:jump`/`player:land` + add trauma; VFX folder has Shake light/medium/heavy + a "Timer: escalating shakes" button; `loadLevel` emits `level:change`; save toast uses `timer.after` instead of `setTimeout`. All three on `window.threej`. |
+| `c58d6a5` | **Events / Timer / Camera shake** — three universal boilerplate modules. `engine/events.ts` (`createEvents<Schema>`): typed pub/sub bus; `on/once/off/emit/clear/count`; handler errors isolated per listener; `on()` returns an unsubscribe fn. `engine/timer.ts` (`createTimers`): loop-dt-based `after/every/tween` timers (pause with the loop; `every` handles large-dt missed intervals; `tween` drives a 0→1 progress with optional easing). `engine/shake.ts` (`createShake`): trauma-model camera shake (`addTrauma`, decays per frame at `trauma²` magnitude, camera-local right/up/roll offset, call LAST in camera callback). Demo: jump/land emit `player:jump`/`player:land` + add trauma; VFX folder has Shake light/medium/heavy + a "Timer: escalating shakes" button; `loadLevel` emits `level:change`; save toast uses `timer.after` instead of `setTimeout`. All three on `window.threej`. |
+| TBD | **Object pool / Raycaster / Spatial audio** — `engine/pool.ts` (`createPool<T>`): generic pre-warmed pool, zero allocations on hot path, `acquire/release/releaseAll/forEach`, grows with warning if exhausted. `engine/raycast.ts` (`createRaycaster`): drag-safe click-on-3D; `pick/pickAll/pickNDC`; `onClick/onHover` attach persistent listeners and return cleanup fns. `audio.ts` extended: `play3D(name, pos, opts)` positions sound via Howler's PannerNode; `setListener(pos, fwd, up)` syncs the Web Audio listener to the camera each frame. Demo: clicking the static robot (raycaster + recursive pick) fires blip + shake + sparkle at hit point; physics prop `thud` is now `play3D`; "Pool: orb burst" VFX button fires 5 pre-allocated orbs in a ring, released after 1.5 s; `orbPool` and `raycast` on `window.threej`. |
 
 ---
 
@@ -497,10 +539,8 @@ Loosely ordered; pick by what unblocks the most.
   `postprocessing` lib is the upgrade path beyond `three/addons`.
 - **Spatial/3D audio** — Howler has built-in positional audio; wire
   `audio.setListener(camera)` + `play3D(name, worldPos)`. Makes ambient scenes alive.
-- **`engine/pool.ts`** — generic object pool (`acquire`/`release`). Zero-GC for
-  bullets, enemies, and effects that spawn/despawn at high rate.
-- **`engine/raycast.ts`** — click-on-3D wrapper around `THREE.Raycaster`:
-  `pick(mouseEvent, [objects])` → `{ object, point, distance }`.
+- **`engine/pool.ts`** ✓ done — generic pre-warmed pool, `acquire/release/forEach`.
+- **`engine/raycast.ts`** ✓ done — drag-safe `pick/onClick/onHover`.
 - **GSAP timeline helpers in `engine/`** — reusable entrance/transition tweens.
 - **Tighten TypeScript** — replace the migration's `: any` option-bags with real
   interfaces, module by module.
