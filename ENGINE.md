@@ -5,7 +5,7 @@
 > how this project is built and where it's going. See the *Update protocol* at the
 > bottom — keeping this current is part of every change, not an afterthought.
 
-**Last updated:** 2026-06-20 (after the dialogue + cutscene system)
+**Last updated:** 2026-06-20 (after dialogue actions + trigger zones)
 
 ---
 
@@ -84,6 +84,7 @@ src/
     input.ts            keyboard + gamepad: axis(), down(code), consume(code)
     dialogue.ts         Ink (inkjs) wrapper: lines/choices/variables, presentation-agnostic
     cutscene.ts         GSAP-backed director: async script of awaitable engine actions
+    trigger.ts          flat (XZ) volume zone: update(point) fires onEnter/onExit
     debugPanel.ts       lil-gui panel + composable bloom/light control helpers
     easing.ts           easing helpers
   robot/              the figure (content)
@@ -130,8 +131,9 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 | `stateMachine.ts` | `createStateMachine(spec, ctx)` | `{ update(dt), set(name), state, time, ctx }` |
 | `blendSpace.ts` | `createBlend1D(mixer, stops, { syncPhase })` | `{ set(x), setMaster(w), master, items }` |
 | `input.ts` | `createInput({ target, deadzone })` | `{ axis(), down(code), consume(code), gamepadPressed(b), dispose }` |
-| `dialogue.ts` | `compileInk(src)` · `createDialogue(story)` | `{ onUpdate(fn), start(knot), advance(), choose(i), run(knot), cancel(), variable, active }` |
+| `dialogue.ts` | `compileInk(src)` · `createDialogue(story)` | `{ onUpdate(fn), start(knot), advance(), choose(i), run(knot), cancel(), command(name,fn), variable, active }` |
 | `cutscene.ts` | `createDirector(extras)` | `{ play(asyncScript), skip(), cx, active }` |
+| `trigger.ts` | `createTrigger({ position, radius, once, onEnter, onExit })` | `{ update(point), reset(), inside, position, radius }` |
 | `debugPanel.ts` | `createDebugPanel({ title, closed })` · `addBloomControls(gui, bloom, renderer)` · `addLightControls(gui, lights)` | a lil-gui `GUI` + folders |
 | `easing.ts` | `easeInOut(t)` | number |
 
@@ -191,13 +193,21 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
   `run(knot)` resolves at the end (await it in a cutscene), `variable.get/set`.
   Authoring convention: write `"Speaker: text"` and the speaker is split out.
   `compileInk()` compiles `.ink` at runtime (dev); ship precompiled JSON to drop
-  the heavier `inkjs/full` compiler.
+  the heavier `inkjs/full` compiler. **Tag-driven actions:** register
+  `dialogue.command('anim', (arg) => …)` and tag a line `#anim:wave` — the handler
+  fires as the line shows (use for animations, camera, sfx, screen shake…). The DOM
+  presentation (`dialogueUI.ts`) reveals text with a typewriter; first click
+  completes the reveal, the next advances.
 - `cutscene.ts`: a director where a cutscene is an async script —
   `play(async (cx) => { await cx.to(camera.position, {...}); await cx.say('knot'); })`.
   `cx` gives GSAP-backed awaitables (`to`, `wait`, `parallel`) + `say` (runs the
   dialogue); pass domain objects via `createDirector({ camera, dialogue })`. While
   `director.active`, the main loop hands the camera over (skips `zoom.update`).
   `skip()` kills tweens and resolves pending awaits so the script finishes at once.
+- `trigger.ts`: a flat XZ zone — `update(point)` each frame fires `onEnter`/`onExit`
+  on the edges (`once` latches). Reusable for NPC talk zones, doors, checkpoints,
+  hazards. The vendor drive demo puts an NPC ring on the floor; driving into it
+  starts a conversation (drive holds still while `dialogue.active`).
 - `input.ts`: `axis()` gives a movement vector from WASD/arrows + the gamepad left
   stick (deadzoned, clamped to unit). `down(code)` is held-state; `consume(code)`
   is a one-shot edge read for actions (jump on Space). The full character-control
@@ -362,6 +372,7 @@ one meaningful commit per step).
 | `5bd8ff6` | **Input + drivable character** — `engine/input.ts` (WASD/gamepad); capsule gains gravity + jump; a "Drive (WASD/Space)" toggle drives the vendor bot via a Idle/Walk/Run/Jump FSM. |
 | `a1f13d6` | **Blend space + smooth facing** — `engine/blendSpace.ts` (1D blend tree); drive locomotion blends Idle/Walk/Run by speed (jump overlaid); facing turns smoothly toward input. |
 | `71f71de` | **Dialogue + cutscene** — `engine/dialogue.ts` (Ink/inkjs wrapper: lines/choices/variables, presentation-agnostic) + `dialogueUI.ts` (DOM box) + `engine/cutscene.ts` (GSAP-backed async director). "Scene" GUI folder plays an intro: camera dollies in, runs a branching conversation, dollies back. |
+| _pending_ | **Dialogue actions + trigger zones** — line tags (`#anim:wave`) dispatch to `dialogue.command()` handlers (robot reacts mid-line); `dialogueUI.ts` typewriter reveal (click completes, click advances); `engine/trigger.ts` (flat XZ zone, edge enter/exit) — driving the character into an NPC ring on the floor starts a conversation (drive freezes while talking). |
 
 ---
 

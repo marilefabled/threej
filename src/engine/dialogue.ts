@@ -22,10 +22,22 @@ export function createDialogue(story: any) {
   let onUpdate: ((state: any) => void) | null = null;
   let resolveRun: (() => void) | null = null;
   let active = false;
+  const commands = new Map<string, (arg: string, raw: string) => void>();
 
   function parse(line: string) {
     const m = line.match(/^([^:\n]{1,24}):\s+(.+)$/s);
     return m ? { speaker: m[1].trim(), text: m[2].trim() } : { speaker: '', text: line.trim() };
+  }
+
+  // Fire registered handlers for a line's tags. A tag `anim:wave` calls the
+  // 'anim' command with arg 'wave'; a bare tag `shake` calls 'shake' with ''.
+  function dispatch(tags: string[]) {
+    for (const tag of tags) {
+      const i = tag.indexOf(':');
+      const name = (i < 0 ? tag : tag.slice(0, i)).trim();
+      const arg = i < 0 ? '' : tag.slice(i + 1).trim();
+      commands.get(name)?.(arg, tag);
+    }
   }
 
   // Emit the next beat: the next line, or the current choices, or end.
@@ -34,6 +46,7 @@ export function createDialogue(story: any) {
       const text = s.Continue();
       const tags = s.currentTags ?? [];
       if (!text.trim() && s.canContinue) return step();   // skip blank lines
+      dispatch(tags);                                     // run #anim:… etc for this line
       onUpdate?.({ ...parse(text), tags, choices: [] });
       return;
     }
@@ -55,6 +68,7 @@ export function createDialogue(story: any) {
     cancel() { if (!active) return; active = false; onUpdate?.(null); const r = resolveRun; resolveRun = null; r?.(); },
     run(knot?: string) { return new Promise<void>((res) => { resolveRun = res; this.start(knot); }); },
     variable: { get: (k: string) => s.variablesState[k], set: (k: string, v: any) => { s.variablesState[k] = v; } },
+    command(name: string, fn: (arg: string, raw: string) => void) { commands.set(name, fn); return this; },
     get active() { return active; },
   };
 }

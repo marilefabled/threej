@@ -22,6 +22,7 @@ import { createInput } from './engine/input.js';
 import { createBlend1D } from './engine/blendSpace.js';
 import { createDialogue, compileInk } from './engine/dialogue.js';
 import { createDirector } from './engine/cutscene.js';
+import { createTrigger } from './engine/trigger.js';
 import { createDialogueUI } from './dialogueUI.js';
 import { createDebugPanel, addBloomControls, addLightControls } from './engine/debugPanel.js';
 
@@ -274,10 +275,11 @@ VAR talked = false
 
 === cell_intro ===
 Warden: So. You're the new resident of Block A.
-Warden: Most folks keep their heads down. You look like trouble.
+Warden: Stand up straight. Let me look at you. #anim:flex
+Warden: ...Hm. You look like trouble.
 * [ "I'm not staying long." ]
     ~ talked = true
-    You: I'm not staying long.
+    You: I'm not staying long. #anim:idle
     Warden: That's what they all say.
     -> warn
 * [ Say nothing. ]
@@ -288,10 +290,33 @@ Warden: Most folks keep their heads down. You look like trouble.
 Warden: The robots run the yard after dark. Stay in your cell.
 Warden: And whatever you do — don't touch the crates.
 -> END
+
+=== yard_npc ===
+Inmate: Psst — over here. #anim:wave
+Inmate: You didn't hear it from me, but the crates?
+Inmate: That's the way out. #anim:idle
+-> END
 `;
 const dialogue = createDialogue(compileInk(INK));
+// Tag-driven actions: lines tagged #anim:NAME make the robot play that clip.
+dialogue.command('anim', (name: string) => { if (ANIMATIONS[name]) { curAnim = name; animTime = 0; } });
 createDialogueUI(dialogue);
 const director = createDirector({ camera, dialogue });
+
+// NPC talk zone: a glowing ring on the floor; driving the character into it starts
+// a conversation (wired in the vendor drive loop below).
+const npcSpot = new THREE.Vector3(0.4, 0, 1.1);   // a couple units +x of the drive spawn
+const npcRing = new THREE.Mesh(
+  new THREE.RingGeometry(1.15, 1.4, 48),
+  new THREE.MeshBasicMaterial({ color: 0x66ccff, transparent: true, opacity: 0.5, side: THREE.DoubleSide }),
+);
+npcRing.rotation.x = -Math.PI / 2;
+npcRing.position.set(npcSpot.x, 0.02, npcSpot.z);
+scene.add(npcRing);
+const npcTrigger = createTrigger({
+  position: npcSpot, radius: 1.4,
+  onEnter: () => { if (!dialogue.active && !director.active) dialogue.run('yard_npc'); },
+});
 
 // A scripted intro: dolly the camera in, run the conversation, dolly back. Runs
 // through director.play so director.active is true (the loop hands the camera over).
@@ -352,7 +377,7 @@ window.addEventListener('resize', () => {
 });
 
 // Devtools handles
-window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, dialogue, director, playIntro, spawnProp, GHOST_FORMS, createStateMachine };
+window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, dialogue, director, playIntro, npcTrigger, getCurAnim: () => curAnim, spawnProp, GHOST_FORMS, createStateMachine };
 
 // ── Vendor robot gallery: browse an extracted Unity pack (git-ignored) via
 // public/vendor/manifest.json (see tools/build-vendor-manifest.mjs). The packs
@@ -417,6 +442,8 @@ async function loadVendorRobot(entry: any) {
 
     // ── Drive (WASD/space): you control it — input → capsule, FSM picks clips ──
     if (vendorOpts.drive) {
+      npcTrigger.update(model.position);                  // NPC talk zone (edge-triggered)
+      if (dialogue.active || director.active) { vendorBlend?.set(0); return; }  // hold still while talking
       const a = input.axis();
       const running = input.down('ShiftLeft') || input.down('ShiftRight');
       const sp = a.len * (running ? 5.5 : 3.0);

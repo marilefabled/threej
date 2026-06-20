@@ -147,3 +147,4 @@ canvas { display: block; }
   text-transform: uppercase; color: rgba(180,200,255,0.45);
 }
 #dialogue.choosing #dialogue-hint { display: none; }
+#dialogue.typing #dialogue-hint { visibility: hidden; }   /* hide prompt mid-reveal */
