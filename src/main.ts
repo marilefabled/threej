@@ -274,12 +274,12 @@ const INK = `
 VAR talked = false
 
 === cell_intro ===
-Warden: So. You're the new resident of Block A.
+Warden: So. You're the new resident of Block A. #look:warden
 Warden: Stand up straight. Let me look at you. #anim:flex
 Warden: ...Hm. You look like trouble.
 * [ "I'm not staying long." ]
     ~ talked = true
-    You: I'm not staying long. #anim:idle
+    You: I'm not staying long. #anim:idle #look:you
     Warden: That's what they all say.
     -> warn
 * [ Say nothing. ]
@@ -288,20 +288,43 @@ Warden: ...Hm. You look like trouble.
 
 === warn ===
 Warden: The robots run the yard after dark. Stay in your cell.
-Warden: And whatever you do — don't touch the crates.
--> END
+Warden: And whatever you do — don't touch the crates. #look:crates
+* { talked } [ "And if I touch the crates?" ]
+    Warden: Then you'd better run faster than they do.
+* [ Nod. ]
+    Warden: Good. We understand each other.
+- -> END
 
 === yard_npc ===
-Inmate: Psst — over here. #anim:wave
+Inmate: Psst — over here. #anim:wave #look:inmate
 Inmate: You didn't hear it from me, but the crates?
-Inmate: That's the way out. #anim:idle
--> END
+Inmate: That's the way out. #anim:idle #look:crates
+* { talked } [ "The warden warned me about those." ]
+    Inmate: 'Course they did. They don't want you leaving.
+* [ "...How?" ]
+    Inmate: Wait for dark. The robots get sloppy.
+- -> END
 `;
 const dialogue = createDialogue(compileInk(INK));
 // Tag-driven actions: lines tagged #anim:NAME make the robot play that clip.
 dialogue.command('anim', (name: string) => { if (ANIMATIONS[name]) { curAnim = name; animTime = 0; } });
 createDialogueUI(dialogue);
 const director = createDirector({ camera, dialogue });
+
+// Camera tag: a line tagged #look:NAME punches the camera to a named framing via
+// the zoom module (eases in, holds, returns to OrbitControls). No-op during a
+// cutscene — the director's script owns the camera then.
+const LOOK_TARGETS: Record<string, THREE.Vector3> = {
+  warden: new THREE.Vector3(0, 2.2, 4.8),    // tight front push-in
+  you:    new THREE.Vector3(-1.6, 2.4, 5.4), // over-the-shoulder angle
+  inmate: new THREE.Vector3(1.6, 2.0, 4.6),  // low side
+  crates: new THREE.Vector3(0, 3.6, 7.5),    // pull wide
+};
+dialogue.command('look', (name: string) => {
+  if (director.active) return;
+  const p = LOOK_TARGETS[name];
+  if (p) zoom.trigger(p);
+});
 
 // NPC talk zone: a glowing ring on the floor; driving the character into it starts
 // a conversation (wired in the vendor drive loop below).
