@@ -11,6 +11,7 @@ import { createCameraZoom } from './engine/cameraZoom.js';
 import { createBloom } from './engine/bloom.js';
 import { createLoop } from './engine/loop.js';
 import { createAssets } from './engine/assets.js';
+import { createUrlState } from './engine/state.js';
 import { createDebugPanel, addBloomControls, addLightControls } from './engine/debugPanel.js';
 
 import { buildRobot } from './robot/robot.js';
@@ -78,7 +79,12 @@ const zoom = createCameraZoom(camera, controls, {
 
 // ── State ──
 let curAnim = 'idle';
+let curTheme = 0;
 let animTime = 0;
+
+const urlState = createUrlState();
+let applying = false;                       // suppress URL writes while loading a build code
+const syncUrl = () => { if (!applying) urlState.write(currentConfig()); };
 
 // ── Robot UI (themes + animations) ──
 const ui = setupUI({
@@ -87,11 +93,12 @@ const ui = setupUI({
     curAnim = name;
     animTime = 0;
     zoom.trigger(ZOOM_TARGETS[name]);
+    syncUrl();
   },
-  onTheme: (i) => applyTheme(THEMES[i], themeCtx),
+  onTheme: (i) => { curTheme = i; applyTheme(THEMES[i], themeCtx); syncUrl(); },
 });
 
-// ── Jail UI (location + period) ──
+// ── Jail UI (location + period + mood + ghost) ──
 const locationSelect = document.getElementById('location-select');
 LOCATIONS.forEach(loc => {
   const opt = document.createElement('option');
@@ -100,13 +107,13 @@ LOCATIONS.forEach(loc => {
   locationSelect.appendChild(opt);
 });
 locationSelect.value = 'cell_block_a';
-locationSelect.addEventListener('change', () => jail.setLocation(locationSelect.value));
+locationSelect.addEventListener('change', () => { jail.setLocation(locationSelect.value); syncUrl(); });
 
 const periodSelect = document.getElementById('period-select');
-periodSelect.addEventListener('change', () => jail.setPeriod(periodSelect.value));
+periodSelect.addEventListener('change', () => { jail.setPeriod(periodSelect.value); syncUrl(); });
 
 const moodSelect = document.getElementById('mood-select');
-moodSelect.addEventListener('change', () => jail.setMood(moodSelect.value));
+moodSelect.addEventListener('change', () => { jail.setMood(moodSelect.value); syncUrl(); });
 
 // Ghost-form picker drives the primary (front) ghost
 const ghostSelect = document.getElementById('ghost-select');
@@ -117,7 +124,7 @@ GHOST_FORMS.forEach(form => {
   ghostSelect.appendChild(opt);
 });
 ghostSelect.value = 'classic';
-ghostSelect.addEventListener('change', () => jail.setGhostForm(0, ghostSelect.value));
+ghostSelect.addEventListener('change', () => { jail.setGhostForm(0, ghostSelect.value); syncUrl(); });
 
 // ── Debug panel (lil-gui) — live bloom + lighting tuning + robot parts ──
 const gui = createDebugPanel({ title: 'Engine' });
@@ -132,14 +139,48 @@ const partState = { ...robot.parts.current };
   const opts = {};
   robot.parts.options[part].forEach(name => { opts[cap(name)] = name; });
   partsFolder.add(partState, part, opts).name(cap(part))
-    .onChange(v => robot.parts.set(part, v)).listen();
+    .onChange(v => { robot.parts.set(part, v); syncUrl(); }).listen();
 });
-partState.randomize = () => Object.assign(partState, robot.parts.randomize());
+partState.randomize = () => { Object.assign(partState, robot.parts.randomize()); syncUrl(); };
 partsFolder.add(partState, 'randomize').name('Randomize');
 
-// Initial selection
-ui.selectTheme(0);
-ui.selectAnim('idle');
+// Copy the current look as a shareable link
+const share = { copyLink: () => navigator.clipboard?.writeText(location.href) };
+gui.add(share, 'copyLink').name('Copy share link');
+
+// ── Build code: read current look ⇄ apply a saved one ──
+function currentConfig() {
+  return {
+    anim: curAnim, theme: curTheme,
+    loc: locationSelect.value, period: periodSelect.value,
+    mood: moodSelect.value, ghost: ghostSelect.value,
+    head: robot.parts.current.head, torso: robot.parts.current.torso,
+    arms: robot.parts.current.arms, legs: robot.parts.current.legs,
+  };
+}
+
+function applyConfig(cfg) {
+  applying = true;
+  // Robot parts (also reflect into the lil-gui dropdowns via partState + .listen)
+  ['head', 'torso', 'arms', 'legs'].forEach(part => {
+    if (cfg[part] && robot.parts.options[part].includes(cfg[part])) {
+      robot.parts.set(part, cfg[part]); partState[part] = cfg[part];
+    }
+  });
+  if (cfg.loc && [...locationSelect.options].some(o => o.value === cfg.loc)) {
+    locationSelect.value = cfg.loc; jail.setLocation(cfg.loc, { animate: false });
+  }
+  if (cfg.period) { periodSelect.value = cfg.period; jail.setPeriod(cfg.period); }
+  if (cfg.mood) { moodSelect.value = cfg.mood; jail.setMood(cfg.mood); }
+  if (cfg.ghost && GHOST_FORMS.includes(cfg.ghost)) { ghostSelect.value = cfg.ghost; jail.setGhostForm(0, cfg.ghost); }
+  ui.selectTheme(cfg.theme != null && THEMES[+cfg.theme] ? +cfg.theme : 0);
+  ui.selectAnim(ANIMATIONS[cfg.anim] ? cfg.anim : 'idle');
+  applying = false;
+  syncUrl();
+}
+
+// Load from the URL build code (falling back to defaults for anything absent)
+applyConfig(urlState.read());
 
 // ── Render loop ──
 const loop = createLoop(renderer);
