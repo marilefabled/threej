@@ -5,7 +5,7 @@
 > how this project is built and where it's going. See the *Update protocol* at the
 > bottom — keeping this current is part of every change, not an afterthought.
 
-**Last updated:** 2026-06-20 (after the crossfade animator)
+**Last updated:** 2026-06-20 (after root motion)
 
 ---
 
@@ -77,6 +77,7 @@ src/
     audio.ts            Howler wrapper + procedural WAV generator (no asset files)
     ecs.ts              miniplex World + a frame-system registry
     animator.ts         AnimationMixer crossfade controller (named clips, play(name))
+    rootMotion.ts       extract planar root-bone displacement → move the character
     debugPanel.ts       lil-gui panel + composable bloom/light control helpers
     easing.ts           easing helpers
   robot/              the figure (content)
@@ -118,7 +119,8 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 | `physics.ts` | `await createPhysics({ gravity })` | `{ world, step(dt), addGround(y,half), addDynamic(mesh,shape,{link}), remove, links }` |
 | `audio.ts` | `createAudio({ volume })` · `toneWav(params)` | `{ load, tone, play, setVolume, mute, sounds, Howler }` |
 | `ecs.ts` | `createECS()` | `{ world, system(fn), update(dt, t) }` (miniplex `world`) |
-| `animator.ts` | `createAnimator(root)` | `{ add(name, clip), play(name, {fade,loop,timeScale}), update(dt), has, stop, current }` |
+| `animator.ts` | `createAnimator(root)` | `{ add(name, clip), play(name, {fade,loop,timeScale}), update(dt), has, stop, current, currentAction }` |
+| `rootMotion.ts` | `createRootMotion(target, { bone, getTime })` | `{ apply(), reset(), bone }` |
 | `debugPanel.ts` | `createDebugPanel({ title, closed })` · `addBloomControls(gui, bloom, renderer)` · `addLightControls(gui, lights)` | a lil-gui `GUI` + folders |
 | `easing.ts` | `easeInOut(t)` | number |
 
@@ -157,8 +159,15 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 - `animator.ts`: a crossfade layer over `AnimationMixer`. `add(name, clip)` then
   `play(name, { fade })` fades from the current action to the next (the base of a
   state machine). The vendor gallery uses it: switching the Animation dropdown
-  crossfades on the same model, and walk/run clips drive a small locomotion path
-  (animation → movement). Root-motion extraction would be the next layer.
+  crossfades on the same model.
+- `rootMotion.ts`: drives the character FROM the animation. Each frame it reads the
+  root bone's local horizontal delta, converts it through the bone parent's world
+  rotation+scale (unit/orientation correct), adds it to the target's world
+  position, and pins the bone's horizontal back so the mesh doesn't double-move.
+  Loop wrap is detected via `getTime()` decreasing — so it's unit-independent (no
+  magnitude threshold). The vendor "Root motion" toggle uses it for `W Root` clips;
+  otherwise a scripted circle. Next: a state machine (Idle↔Walk↔Run) + a Rapier
+  capsule so the vendor bot collides.
 - `ecs.ts` (miniplex): `world.add({...components})`, query with
   `world.with('a','b')`, `system((world, dt, t) => …)`, drive with
   `ecs.update(dt, t)` from the loop. The demo's dropped props are entities

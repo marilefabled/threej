@@ -16,6 +16,7 @@ import { createPhysics } from './engine/physics.js';
 import { createAudio } from './engine/audio.js';
 import { createECS } from './engine/ecs.js';
 import { createAnimator } from './engine/animator.js';
+import { createRootMotion } from './engine/rootMotion.js';
 import { createDebugPanel, addBloomControls, addLightControls } from './engine/debugPanel.js';
 
 import { buildRobot } from './robot/robot.js';
@@ -308,12 +309,15 @@ window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physic
 // PSD→PNG (converted with sips). Silently skipped on a clone without the pack. ──
 let vendorModel: any = null;
 let vendorAnimator: any = null;
+let vendorRoot: any = null;   // root-motion extractor for the current model
 let vendorDispose: (() => void) | null = null;
 let vendorClip = '';          // current clip name (drives locomotion)
 let vendorGroundY = 0;        // feet-on-floor y for the current model
-let walkAngle = 0;            // phase along the walk circle
+let walkAngle = 0;            // phase along the scripted walk circle
 const WALK_R = 0.9;           // radius of the wander circle
 const vendorCenter = new THREE.Vector2(-1.7, 2.0 - WALK_R); // so home sits on the circle
+const vendorHome = new THREE.Vector3(vendorCenter.x, 0, vendorCenter.y + WALK_R);
+const vendorOpts = { rootMotion: false };   // toggle: real root motion vs scripted circle
 
 // Load a robot mesh: textured material, normalized scale, animator + the loop
 // hooks (animator update + locomotion). Reused on robot change.
@@ -343,12 +347,22 @@ async function loadVendorRobot(entry: any) {
   scene.add(model);
   vendorModel = model;
   vendorAnimator = createAnimator(model);
+  vendorRoot = createRootMotion(model, { getTime: () => vendorAnimator.currentAction?.time ?? 0 });
+  vendorHome.set(vendorCenter.x, vendorGroundY, vendorCenter.y + WALK_R);
   window.threej.vendorRobot = model;
 
   vendorDispose = loop.onFrame((_t, dt) => {
     vendorAnimator.update(dt);
-    // Locomotion: walk/run clips drive the robot around a gentle circle; other
-    // clips play in place. (A first taste of an animation→movement controller.)
+
+    // Root motion: a "W Root" clip carries forward displacement on the root bone;
+    // extract it so the animation itself walks the robot. Re-home if it wanders off.
+    if (vendorOpts.rootMotion && /w root/i.test(vendorClip)) {
+      vendorRoot.apply();
+      model.position.y = vendorGroundY;
+      if (model.position.distanceTo(vendorHome) > 3) { model.position.copy(vendorHome); vendorRoot.reset(); }
+      return;
+    }
+    // Otherwise: scripted circular wander for walk/run, in place for everything else.
     if (/walk|run/i.test(vendorClip)) {
       const speed = /run/i.test(vendorClip) ? 1.3 : 0.65;
       walkAngle += (speed / WALK_R) * dt;
@@ -374,6 +388,8 @@ async function setVendorClip(entry: any, name: string) {
   }
   vendorClip = info.name;
   vendorAnimator.play(info.name, { fade: 0.35 });
+  vendorRoot?.reset();          // re-prime root motion for the new clip
+  if (vendorModel) vendorModel.position.copy(vendorHome);   // start each clip from home
 }
 
 (async () => {
@@ -396,11 +412,14 @@ async function setVendorClip(entry: any, name: string) {
   });
   let animCtrl = folder.add(pick, 'animation', animsFor(pick.robot)).name('Animation')
     .onChange(() => setVendorClip(entryFor(pick.robot), pick.animation));
+  folder.add(vendorOpts, 'rootMotion').name('Root motion (W Root clips)')
+    .onChange(() => { vendorRoot?.reset(); if (vendorModel) vendorModel.position.copy(vendorHome); });
 
   await loadVendorRobot(entryFor(pick.robot));
   await setVendorClip(entryFor(pick.robot), pick.animation);
   // dev/test hooks
   window.threej.vendorSetClip = (n: string) => setVendorClip(entryFor(pick.robot), n);
+  window.threej.vendorRootMotion = (on: boolean) => { vendorOpts.rootMotion = on; vendorRoot?.reset(); if (vendorModel) vendorModel.position.copy(vendorHome); };
   window.threej.vendorRobotNames = names;
   console.info(`[vendor] gallery ready — ${manifest.robots.length} robots, crossfade + locomotion`);
 })();

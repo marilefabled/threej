@@ -46,5 +46,9 @@ export function createAnimator(root: any) {
   function has(name: string) { return actions.has(name); }
   function stop() { mixer.stopAllAction(); current = null; currentName = ''; }
 
-  return { mixer, add, play, update, has, stop, actions, get current() { return currentName; } };
+  return {
+    mixer, add, play, update, has, stop, actions,
+    get current() { return currentName; },
+    get currentAction() { return current; },
+  };
 }
