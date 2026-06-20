@@ -13,6 +13,7 @@ import { createLoop } from './engine/loop.js';
 import { createAssets } from './engine/assets.js';
 import { createUrlState } from './engine/state.js';
 import { createPhysics } from './engine/physics.js';
+import { createAudio } from './engine/audio.js';
 import { createDebugPanel, addBloomControls, addLightControls } from './engine/debugPanel.js';
 
 import { buildRobot } from './robot/robot.js';
@@ -68,6 +69,12 @@ jail.setMood('neutral');
 const physics = await createPhysics();
 physics.addGround(0);                                    // matches the jail floor at y=0
 
+// ── Audio (Howler) — procedurally-synthesized blips/thuds, no asset files ──
+const audio = createAudio({ volume: 0.5 });
+audio.tone('blip', { freq: 620, dur: 0.07, type: 'square', decay: 26, volume: 0.4 });
+audio.tone('swish', { freq: 320, dur: 0.14, decay: 12, volume: 0.35 });
+audio.tone('thud', { freq: 110, dur: 0.2, type: 'noise', decay: 24, volume: 0.5 });
+
 // What a theme recolors
 const themeCtx = {
   materials: robot.materials,
@@ -98,9 +105,10 @@ const ui = setupUI({
     curAnim = name;
     animTime = 0;
     zoom.trigger(ZOOM_TARGETS[name]);
+    if (!applying) audio.play('swish');
     syncUrl();
   },
-  onTheme: (i) => { curTheme = i; applyTheme(THEMES[i], themeCtx); syncUrl(); },
+  onTheme: (i) => { curTheme = i; applyTheme(THEMES[i], themeCtx); if (!applying) audio.play('blip'); syncUrl(); },
 });
 
 // ── Jail UI (location + period + mood + ghost) ──
@@ -112,13 +120,13 @@ LOCATIONS.forEach(loc => {
   locationSelect.appendChild(opt);
 });
 locationSelect.value = 'cell_block_a';
-locationSelect.addEventListener('change', () => { jail.setLocation(locationSelect.value); syncUrl(); });
+locationSelect.addEventListener('change', () => { jail.setLocation(locationSelect.value); audio.play('blip'); syncUrl(); });
 
 const periodSelect = document.getElementById('period-select') as HTMLSelectElement;
-periodSelect.addEventListener('change', () => { jail.setPeriod(periodSelect.value); syncUrl(); });
+periodSelect.addEventListener('change', () => { jail.setPeriod(periodSelect.value); audio.play('blip'); syncUrl(); });
 
 const moodSelect = document.getElementById('mood-select') as HTMLSelectElement;
-moodSelect.addEventListener('change', () => { jail.setMood(moodSelect.value); syncUrl(); });
+moodSelect.addEventListener('change', () => { jail.setMood(moodSelect.value); audio.play('blip'); syncUrl(); });
 
 // Ghost-form picker drives the primary (front) ghost
 const ghostSelect = document.getElementById('ghost-select') as HTMLSelectElement;
@@ -175,6 +183,7 @@ function spawnProp() {
   scene.add(mesh);
   const shape = ball ? { type: 'ball', r: s } : { type: 'box', hx: s, hy: s, hz: s };
   physics.addDynamic(mesh, shape, { restitution: ball ? 0.55 : 0.25 });
+  audio.play('thud', { rate: 0.85 + Math.random() * 0.4 });   // vary pitch per drop
 }
 function clearProps() {
   for (const l of [...physics.links]) { scene.remove(l.mesh); physics.remove(l.body); }
@@ -183,6 +192,12 @@ const physicsFolder = gui.addFolder('Physics');
 physicsFolder.add({ drop: () => spawnProp() }, 'drop').name('Drop one');
 physicsFolder.add({ drop10: () => { for (let i = 0; i < 10; i++) spawnProp(); } }, 'drop10').name('Drop 10');
 physicsFolder.add({ clear: () => clearProps() }, 'clear').name('Clear');
+
+// Audio (Howler) — master volume + mute
+const audioState = { volume: 0.5, mute: false };
+const audioFolder = gui.addFolder('Audio');
+audioFolder.add(audioState, 'volume', 0, 1, 0.01).onChange((v: number) => audio.setVolume(v));
+audioFolder.add(audioState, 'mute').onChange((m: boolean) => audio.mute(m));
 
 // ── Build code: read current look ⇄ apply a saved one ──
 function currentConfig() {
@@ -258,4 +273,4 @@ window.addEventListener('resize', () => {
 });
 
 // Devtools handles
-window.threej = { scene, camera, robot, jail, bloom, loop, assets, physics, spawnProp, GHOST_FORMS };
+window.threej = { scene, camera, robot, jail, bloom, loop, assets, physics, audio, spawnProp, GHOST_FORMS };
