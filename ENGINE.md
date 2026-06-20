@@ -319,6 +319,7 @@ one meaningful commit per step).
 | `7e2c8d5` | **Crossfade animator** — `engine/animator.ts` (named clips + `play(name, {fade})`); vendor Animation dropdown crossfades on the same model; walk/run clips drive a locomotion path. |
 | `76ef87a` | **Root motion** — `engine/rootMotion.ts` extracts root-bone displacement (unit-independent, loop-safe) → the animation walks the character; vendor "Root motion" toggle for `W Root` clips. |
 | `23e272b` | **State machine** — `engine/stateMachine.ts` (states + transitions); vendor "Wander (AI)" toggle runs an Idle↔Walk FSM driving the animator. |
+| `3b29740` | **Capsule character** — `physics.addCharacter` (Rapier KinematicCharacterController) + `addStaticBox` walls; the vendor bot routes locomotion through it, colliding with walls + shoving crates. |
 
 ---
 
