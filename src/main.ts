@@ -12,6 +12,7 @@ import { createBloom } from './engine/bloom.js';
 import { createLoop } from './engine/loop.js';
 import { createAssets } from './engine/assets.js';
 import { createUrlState } from './engine/state.js';
+import { createPhysics } from './engine/physics.js';
 import { createDebugPanel, addBloomControls, addLightControls } from './engine/debugPanel.js';
 
 import { buildRobot } from './robot/robot.js';
@@ -62,6 +63,10 @@ jail.addGhost({ glowColor: '#33f589', ghostForm: 'classic', size: 'medium' }, { 
 jail.addGhost({ glowColor: '#8899ff', ghostForm: 'wispy',   size: 'small'  }, { x: -1.95, y: 1.15, z: -0.2 });
 jail.setPeriod('night');
 jail.setMood('neutral');
+
+// ── Physics (Rapier) — a floor + droppable crates that pile up in the cell ──
+const physics = await createPhysics();
+physics.addGround(0);                                    // matches the jail floor at y=0
 
 // What a theme recolors
 const themeCtx = {
@@ -148,6 +153,37 @@ partsFolder.add(partState, 'randomize').name('Randomize');
 const share = { copyLink: () => navigator.clipboard?.writeText(location.href) };
 gui.add(share, 'copyLink').name('Copy share link');
 
+// ── Physics demo: drop crates/orbs that fall + pile on the floor ──
+const PROP_MATS = [
+  new THREE.MeshStandardMaterial({ color: 0xcc8844, roughness: 0.7, metalness: 0.1 }),
+  new THREE.MeshStandardMaterial({ color: 0x6699cc, roughness: 0.5, metalness: 0.4 }),
+  new THREE.MeshStandardMaterial({ color: 0xaa5577, roughness: 0.6, metalness: 0.2 }),
+];
+function spawnProp() {
+  const ball = Math.random() < 0.35;
+  const s = 0.28 + Math.random() * 0.16;
+  const mat = PROP_MATS[(Math.random() * PROP_MATS.length) | 0];
+  const mesh = new THREE.Mesh(
+    ball ? new THREE.SphereGeometry(s, 16, 12) : new THREE.BoxGeometry(s * 2, s * 2, s * 2),
+    mat,
+  );
+  mesh.castShadow = mesh.receiveShadow = true;
+  // Spawn in a ring around the robot so they land beside it, not inside it
+  const a = Math.random() * Math.PI * 2, r = 1.6 + Math.random() * 1.0;
+  mesh.position.set(Math.cos(a) * r, 4 + Math.random() * 1.5, Math.sin(a) * r);
+  mesh.quaternion.random();
+  scene.add(mesh);
+  const shape = ball ? { type: 'ball', r: s } : { type: 'box', hx: s, hy: s, hz: s };
+  physics.addDynamic(mesh, shape, { restitution: ball ? 0.55 : 0.25 });
+}
+function clearProps() {
+  for (const l of [...physics.links]) { scene.remove(l.mesh); physics.remove(l.body); }
+}
+const physicsFolder = gui.addFolder('Physics');
+physicsFolder.add({ drop: () => spawnProp() }, 'drop').name('Drop one');
+physicsFolder.add({ drop10: () => { for (let i = 0; i < 10; i++) spawnProp(); } }, 'drop10').name('Drop 10');
+physicsFolder.add({ clear: () => clearProps() }, 'clear').name('Clear');
+
 // ── Build code: read current look ⇄ apply a saved one ──
 function currentConfig() {
   return {
@@ -196,6 +232,9 @@ loop.onFrame((t, dt) => {
 // Ghosts float on continuous world time
 loop.onFrame((t) => jail.update(t));
 
+// Physics: advance the world + sync prop meshes
+loop.onFrame((t, dt) => physics.step(dt));
+
 // Ambient life — rim lights, bounce, ground-glow pulse
 loop.onFrame((t) => {
   lights.rimL.intensity = 4 + Math.sin(t * 0.7) * 1.2;
@@ -219,4 +258,4 @@ window.addEventListener('resize', () => {
 });
 
 // Devtools handles
-window.threej = { scene, camera, robot, jail, bloom, loop, assets, GHOST_FORMS };
+window.threej = { scene, camera, robot, jail, bloom, loop, assets, physics, spawnProp, GHOST_FORMS };
