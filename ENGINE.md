@@ -5,7 +5,7 @@
 > how this project is built and where it's going. See the *Update protocol* at the
 > bottom — keeping this current is part of every change, not an afterthought.
 
-**Last updated:** 2026-06-20 (after Vite+TS migration + physics/audio/ECS)
+**Last updated:** 2026-06-20 (after the vendor robot gallery)
 
 ---
 
@@ -87,7 +87,8 @@ src/
     locationBuilder.ts  9 prison locations from primitives
     jailScene.ts        active location + ghosts + period/mood light + GSAP transitions
 tools/                node-side utilities (run with `node`, not in the browser)
-    unpack-unitypackage.mjs  lift assets out of .unitypackage files (no Unity, no deps)
+    unpack-unitypackage.mjs   lift assets out of .unitypackage files (no Unity, no deps)
+    build-vendor-manifest.mjs scan public/vendor/ → manifest.json for the in-app picker
 ```
 
 **Composition flow (`main.ts`):** `createScene()` → `addLighting()` /
@@ -233,6 +234,20 @@ materials; use the raw model + texture files.
 dev server serves the project dir, so an extracted model is reachable at e.g.
 `assets.loadModel('extracted/MyAsset/Assets/Models/Tree.fbx')`.
 
+**Vendor robot gallery (worked example).** The "Robots Ultimate Pack" extracts to
+`public/vendor/` (git-ignored — never commit purchased assets). Workflow:
+1. `npm run unpack -- <pkg> public/vendor --filter=fbx,psd` — extract meshes + textures.
+2. Convert PSD→PNG (three can't load PSD). macOS: `sips -s format png in.psd --out out.png`
+   (batch over the diffuse/emission PSDs; skip "FX Square").
+3. `npm run vendor:manifest` → `public/vendor/manifest.json` listing each robot's
+   base mesh, texture/emission PNG, and `@`-animation clips.
+4. `main.ts` fetches the manifest and builds a lil-gui **Vendor Robot** picker
+   (Robot + Animation dropdowns). `showVendor()` loads the base mesh, applies the
+   PNG as `map`/`emissiveMap`, and retargets the chosen `@clip` onto it via an
+   `AnimationMixer`. These packs split **mesh** (base `.fbx`) from **animation**
+   (`<Name>@<Clip>.fbx` = skeleton + one clip) — load both, retarget by bone name.
+   Skipped gracefully (no manifest) on a clone without the pack.
+
 ## 7. Dependencies (npm, bundled by Vite)
 
 - **three** `0.165` + `three/addons/*` (OrbitControls, postprocessing, loaders).
@@ -270,6 +285,8 @@ one meaningful commit per step).
 | `05fe0bc` | **Rapier physics** — `engine/physics.ts` (WASM world, ground, `addDynamic`, `step`+sync); "Physics" lil-gui folder drops crates/orbs that pile up. |
 | `a50b4fd` | **Howler audio** — `engine/audio.ts` (sound registry + procedural `toneWav`); blip/swish/thud on interactions + drops; "Audio" folder (volume/mute). |
 | `ecac413` | **miniplex ECS** — `engine/ecs.ts` (World + system registry); dropped props are entities `{mesh,body,ttl}` with sync + ttl-despawn systems. |
+| `7e08714` | **Load a rigged FBX robot** — optional vendor model from an extracted Unity pack (mesh + retargeted clip via AnimationMixer); asset git-ignored. |
+| _vendor gallery_ | **Vendor robot picker** — PSD→PNG (sips) + `tools/build-vendor-manifest.mjs`; lil-gui Robot/Animation dropdowns browse the whole pack (15 robots, 275 clips), textured. See §6b. |
 
 ---
 

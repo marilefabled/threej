@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "unpack": "node tools/unpack-unitypackage.mjs"
+    "unpack": "node tools/unpack-unitypackage.mjs",
+    "vendor:manifest": "node tools/build-vendor-manifest.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.14.0",
