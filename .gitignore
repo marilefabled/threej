@@ -9,6 +9,8 @@ dist/
 *.log
 .claude/settings.local.json
 
-# Extracted Unity assets (can be huge) + raw asset dumps
+# Extracted Unity assets (can be huge) + raw asset dumps. Never commit purchased
+# vendor assets to the repo.
 extracted/
+public/vendor/
 *.unitypackage

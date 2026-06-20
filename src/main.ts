@@ -298,4 +298,45 @@ window.addEventListener('resize', () => {
 });
 
 // Devtools handles
-window.threej = { scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, spawnProp, GHOST_FORMS };
+window.threej = { THREE, scene, camera, robot, jail, bloom, loop, assets, physics, audio, ecs, spawnProp, GHOST_FORMS };
+
+// ── Optional vendor model: a rigged FBX robot, if the (git-ignored) asset is
+// present. These packs split the mesh (base .fbx) from each animation (@clip.fbx
+// holds only the skeleton + one clip), so we load both and retarget the clip onto
+// the mesh by bone name. Silently skipped on a clone without the purchased pack. ──
+const VENDOR_DIR = '/vendor/Assets/Robots Ultimate Pack 02 Cute Series/Nose Robot Cute Series/FBX/';
+const VENDOR_MESH = VENDOR_DIR + 'Nose Robot.FBX';
+const VENDOR_ANIM = VENDOR_DIR + 'Nose Robot@Idle.FBX';
+(async () => {
+  try {
+    const { scene: model } = await assets.loadModel(encodeURI(VENDOR_MESH), { type: 'fbx' });
+    // The pack's textures are PSDs (three can't load them), so give the mesh a
+    // clean lit material so it reads in the scene instead of a dark silhouette.
+    model.traverse((o: any) => {
+      if (o.isMesh) {
+        o.castShadow = o.receiveShadow = true;
+        o.material = new THREE.MeshStandardMaterial({ color: 0x9fb4c8, metalness: 0.55, roughness: 0.5 });
+      }
+    });
+    // Normalize: scale to ~1.8 units tall, feet on the floor, front-left of the robot.
+    let box = new THREE.Box3().setFromObject(model);
+    model.scale.setScalar(1.8 / (box.getSize(new THREE.Vector3()).y || 1));
+    model.rotation.y = 0.5;
+    box = new THREE.Box3().setFromObject(model);
+    model.position.set(-1.6, -box.min.y, 2.2);
+    scene.add(model);
+
+    // Pull the Idle clip from the animation-only FBX and play it on the mesh.
+    const anim = await assets.loadModel(encodeURI(VENDOR_ANIM), { type: 'fbx', clone: false });
+    const clip = anim.animations?.[0];
+    if (clip) {
+      const mixer = new THREE.AnimationMixer(model);
+      mixer.clipAction(clip).play();
+      loop.onFrame((_t, dt) => mixer.update(dt));
+    }
+    window.threej.vendorRobot = model;
+    console.info('[vendor] loaded Nose Robot —', clip ? `playing ${clip.name}` : 'mesh only');
+  } catch (e: any) {
+    console.info('[vendor] no FBX robot loaded (asset not present):', e?.message ?? e);
+  }
+})();
