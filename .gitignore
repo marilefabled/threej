@@ -4,3 +4,7 @@
 # Editor / local
 *.log
 .claude/settings.local.json
+
+# Extracted Unity assets (can be huge) + raw asset dumps
+extracted/
+*.unitypackage

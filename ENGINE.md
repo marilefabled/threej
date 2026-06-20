@@ -5,7 +5,7 @@
 > how this project is built and where it's going. See the *Update protocol* at the
 > bottom — keeping this current is part of every change, not an afterthought.
 
-**Last updated:** 2026-06-20 (after `engine/assets.js`)
+**Last updated:** 2026-06-20 (after the Unity asset pipeline)
 
 ---
 
@@ -74,6 +74,8 @@ src/
     ghostMesh.js        8 procedural ghost forms + float/glow/blink
     locationBuilder.js  9 prison locations from primitives
     jailScene.js        active location + ghosts + period/mood light + GSAP transitions
+tools/                node-side utilities (run with `node`, not in the browser)
+    unpack-unitypackage.mjs  lift assets out of .unitypackage files (no Unity, no deps)
 ```
 
 **Composition flow (`main.js`):** `createScene()` → `addLighting()` /
@@ -105,9 +107,11 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 - `loop.js`: `setRender` runs once after all `onFrame` callbacks. `dt` is clamped;
   `t` is accumulated (monotonic, pause-safe), **not** wall-clock.
 - `assets.js`: Promise-based + URL-deduped (failed loads evict so retries work).
-  `loadModel` returns `{ scene, animations, gltf }` — `scene` is a **skinning-safe
+  `loadModel` dispatches by extension (`.glb/.gltf`, `.fbx`, `.obj`) or a `type`
+  override and returns `{ scene, animations }` — `scene` is a **skinning-safe
   clone** (so the same asset can be instanced; uses lazily-imported SkeletonUtils),
-  shadows enabled. `enableDraco()` and the clone util are lazy-imported — zero cost
+  shadows enabled. `loadTexture` handles `.tga` (and the usual web formats). FBX,
+  OBJ, TGA, DRACO loaders and the clone util are all lazy-imported — zero cost
   until used. Animating a rigged model:
   ```js
   const { scene, animations } = await assets.loadModel('character.glb');
@@ -156,6 +160,37 @@ These live in `robot/` and `jail/` but are templates worth copying:
 4. Add your own content modules alongside (your `robot/` equivalent).
 
 ---
+
+## 6b. Unity asset pipeline
+
+A `.unitypackage` is just a **gzipped tar**; inside, each asset is a GUID folder
+with `asset` (real bytes), `asset.meta` (Unity YAML), and `pathname` (original
+project path). So we lift assets out without ever opening Unity.
+
+```sh
+# extract everything to extracted/<pkg>/Assets/...
+node tools/unpack-unitypackage.mjs MyAsset.unitypackage
+# inspect first / extract a subset
+node tools/unpack-unitypackage.mjs MyAsset.unitypackage --list
+node tools/unpack-unitypackage.mjs MyAsset.unitypackage --filter=fbx,png,tga
+```
+
+`tools/unpack-unitypackage.mjs` is zero-dependency (Node `zlib` + a tiny tar
+parser). It restores original paths and flags which files are usable.
+
+**What's portable into three.js** (load with `engine/assets.js`):
+- **Models** `.fbx` `.obj` `.gltf/.glb` `.dae` → `assets.loadModel(...)`
+- **Textures** `.png` `.jpg` `.tga` → `assets.loadTexture(...)`
+- **Audio** `.wav` `.mp3` `.ogg`
+
+**What is NOT** (extracted as-is, but Unity-renderer/GUID-specific — no auto
+conversion): `.mat` materials, `.prefab`/`.unity` scenes, `.shader`/`.shadergraph`,
+`.cs` scripts, `.controller`/`.anim` (Mecanim). Rebuild materials with three
+materials; use the raw model + texture files.
+
+`extracted/` and `*.unitypackage` are git-ignored (these dumps get large). The
+dev server serves the project dir, so an extracted model is reachable at e.g.
+`assets.loadModel('extracted/MyAsset/Assets/Models/Tree.fbx')`.
 
 ## 7. Dependencies (all via import map, no install)
 

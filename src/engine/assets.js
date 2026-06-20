@@ -1,18 +1,20 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-// Asset loader wrapper — the doorway to real models (Blender / Mixamo GLB/GLTF)
-// and textures. Promise-based, deduped by URL, with a shared LoadingManager for
-// aggregate progress. Heavy/optional bits (DRACO, skinning-safe clone) are
-// lazy-imported so they cost nothing until used.
+// Asset loader wrapper — the doorway to real models (Blender / Mixamo / Unity
+// assets) and textures. Promise-based, deduped by URL, with a shared
+// LoadingManager for aggregate progress. Format-specific loaders (FBX, OBJ, TGA,
+// DRACO) and the skinning-safe clone are lazy-imported so they cost nothing until
+// used.
 //
-//   const assets = createAssets({ basePath: 'models/', onProgress: p => … });
-//   const { scene, animations } = await assets.loadModel('robot.glb');
-//   const map = await assets.loadTexture('floor.png');
+//   const assets = createAssets({ basePath: 'extracted/MyPack/', onProgress });
+//   const { scene, animations } = await assets.loadModel('Assets/Models/Tree.fbx');
+//   const map = await assets.loadTexture('Assets/Textures/bark.tga');
 //
-// Animating a rigged model (the typical Mixamo flow):
-//   const { scene, animations } = await assets.loadModel('character.glb');
-//   sceneRoot.add(scene);
+// loadModel picks the loader from the extension (.glb/.gltf/.fbx/.obj/.dae) or a
+// `type` override. Animating a rigged model (the typical Mixamo flow):
+//   const { scene, animations } = await assets.loadModel('character.fbx');
+//   root.add(scene);
 //   const mixer = new THREE.AnimationMixer(scene);
 //   mixer.clipAction(animations[0]).play();
 //   loop.onFrame((t, dt) => mixer.update(dt));   // engine/loop.js
@@ -31,33 +33,61 @@ export function createAssets({ basePath = '', onProgress, onLoad, onError } = {}
     if (!cache.has(key)) cache.set(key, make().catch((e) => { cache.delete(key); throw e; }));
     return cache.get(key);
   };
+  const extOf = (u) => u.split('?')[0].split('.').pop().toLowerCase();
 
-  // Raw GLTF result ({ scene, animations, cameras, ... }). Cached + shared, so
-  // read from it but clone the scene (loadModel) before adding to the world.
+  // Lazy format loaders (each shares the LoadingManager)
+  let _fbx, _obj, _tga;
+  const fbx = async () => (_fbx ??= new (await import('three/addons/loaders/FBXLoader.js')).FBXLoader(manager));
+  const obj = async () => (_obj ??= new (await import('three/addons/loaders/OBJLoader.js')).OBJLoader(manager));
+  const tga = async () => (_tga ??= new (await import('three/addons/loaders/TGALoader.js')).TGALoader(manager));
+
+  // Raw GLTF result ({ scene, animations, ... }). Cached + shared — read from it
+  // but clone the scene (loadModel) before adding to the world.
   const loadGLTF = (u) => cached('gltf:' + u, () => gltfLoader.loadAsync(url(u)));
 
-  // A ready-to-add instance: a (skinning-safe) clone of the model's scene with
-  // shadows enabled, plus its animation clips.
-  async function loadModel(u, { clone = true, shadows = true } = {}) {
-    const gltf = await loadGLTF(u);
-    const scene = clone ? await cloneSkinned(gltf.scene) : gltf.scene;
+  async function finish(object3d, animations, { clone, shadows }) {
+    const scene = clone ? await cloneSkinned(object3d) : object3d;
     if (shadows) scene.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-    return { scene, animations: gltf.animations, gltf };
+    return { scene, animations: animations || [] };
   }
 
-  const loadTexture = (u, { colorSpace = THREE.SRGBColorSpace, flipY } = {}) =>
-    cached('tex:' + u, () => texLoader.loadAsync(url(u)).then((t) => {
-      t.colorSpace = colorSpace;
-      if (flipY !== undefined) t.flipY = flipY;
-      return t;
-    }));
+  // A ready-to-add model instance: a (skinning-safe) clone with shadows on, plus
+  // its animation clips. Dispatches on extension or an explicit `type`.
+  async function loadModel(u, { clone = true, shadows = true, type } = {}) {
+    const t = (type || extOf(u));
+    if (t === 'glb' || t === 'gltf') {
+      const gltf = await loadGLTF(u);
+      return { ...(await finish(gltf.scene, gltf.animations, { clone, shadows })), gltf };
+    }
+    if (t === 'fbx') {
+      const group = await (await fbx()).loadAsync(url(u));   // Group, with .animations
+      return finish(group, group.animations, { clone, shadows });
+    }
+    if (t === 'obj') {
+      const group = await (await obj()).loadAsync(url(u));   // Group, no animations / materials
+      return finish(group, [], { clone, shadows });
+    }
+    throw new Error(`[assets] unsupported model type "${t}" for ${u}`);
+  }
 
-  // Batch load a map { key: 'file.glb' | 'file.png' } → { key: asset }. Textures
-  // are detected by extension; everything else is treated as a GLTF.
+  function loadTexture(u, { colorSpace = THREE.SRGBColorSpace, flipY, type } = {}) {
+    const t = (type || extOf(u));
+    return cached('tex:' + u, async () => {
+      const loader = t === 'tga' ? await tga() : texLoader;
+      const tex = await loader.loadAsync(url(u));
+      tex.colorSpace = colorSpace;
+      if (flipY !== undefined) tex.flipY = flipY;
+      return tex;
+    });
+  }
+
+  // Batch load { key: 'file.glb' | 'file.png' } → { key: asset }. Type detected by
+  // extension (textures vs models).
   async function loadAll(map) {
+    const texExt = /\.(png|jpe?g|webp|avif|ktx2|tga|bmp|gif|hdr|exr|tiff?)$/i;
     const out = {};
     await Promise.all(Object.entries(map).map(async ([k, u]) => {
-      out[k] = /\.(png|jpe?g|webp|avif|ktx2)$/i.test(u) ? await loadTexture(u) : await loadGLTF(u);
+      out[k] = texExt.test(u) ? await loadTexture(u) : await loadModel(u);
     }));
     return out;
   }
