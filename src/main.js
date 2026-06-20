@@ -10,6 +10,7 @@ import { addEnvironment } from './engine/environment.js';
 import { createCameraZoom } from './engine/cameraZoom.js';
 import { createBloom } from './engine/bloom.js';
 import { createLoop } from './engine/loop.js';
+import { createAssets } from './engine/assets.js';
 import { createDebugPanel, addBloomControls, addLightControls } from './engine/debugPanel.js';
 
 import { buildRobot } from './robot/robot.js';
@@ -46,6 +47,12 @@ scene.add(moodLight);
 
 // Bloom — makes emissive surfaces (robot core/eyes, ghost eyes/glow) bloom
 const bloom = createBloom(renderer, scene, camera, { strength: 0.5, radius: 0.4, threshold: 1.5 });
+
+// Asset loader — ready for GLB/GLTF (Blender/Mixamo) + textures. No models are
+// loaded by default; this is the doorway. e.g. from the console:
+//   const m = await window.threej.assets.loadModel('https://.../model.glb');
+//   window.threej.scene.add(m.scene);
+const assets = createAssets();
 
 // Jail: location geometry + ghosts + period/mood lighting + GSAP transitions
 const jail = createJail(scene, { moodLight, renderer, getBloomPass: () => bloom.bloomPass });
@@ -171,4 +178,4 @@ window.addEventListener('resize', () => {
 });
 
 // Devtools handles
-window.threej = { scene, camera, robot, jail, bloom, loop, GHOST_FORMS };
+window.threej = { scene, camera, robot, jail, bloom, loop, assets, GHOST_FORMS };

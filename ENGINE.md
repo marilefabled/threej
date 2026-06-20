@@ -5,7 +5,7 @@
 > how this project is built and where it's going. See the *Update protocol* at the
 > bottom — keeping this current is part of every change, not an afterthought.
 
-**Last updated:** 2026-06-20 (after `engine/loop.js`)
+**Last updated:** 2026-06-20 (after `engine/assets.js`)
 
 ---
 
@@ -95,6 +95,7 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 | `cameraZoom.js` | `createCameraZoom(camera, controls, { base, lookAt, zoomIn, hold, zoomOut })` | `{ trigger(targetVec3), update(dt, applyLookAt) }` |
 | `bloom.js` | `createBloom(renderer, scene, camera, { strength, radius, threshold })` | `{ composer, bloomPass, render(), setSize(w, h) }` |
 | `loop.js` | `createLoop(renderer, { maxDelta })` | `{ onFrame((t,dt)=>…)→disposer, setRender(fn), start, stop, elapsed, running }` |
+| `assets.js` | `createAssets({ basePath, onProgress, onLoad, onError })` | `{ loadGLTF, loadModel, loadTexture, loadAll, enableDraco, manager, clear }` |
 | `debugPanel.js` | `createDebugPanel({ title, closed })` · `addBloomControls(gui, bloom, renderer)` · `addLightControls(gui, lights)` | a lil-gui `GUI` + folders |
 | `easing.js` | `easeInOut(t)` | number |
 
@@ -103,6 +104,18 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
   at default — `OutputPass` does the sRGB conversion (don't double-convert).
 - `loop.js`: `setRender` runs once after all `onFrame` callbacks. `dt` is clamped;
   `t` is accumulated (monotonic, pause-safe), **not** wall-clock.
+- `assets.js`: Promise-based + URL-deduped (failed loads evict so retries work).
+  `loadModel` returns `{ scene, animations, gltf }` — `scene` is a **skinning-safe
+  clone** (so the same asset can be instanced; uses lazily-imported SkeletonUtils),
+  shadows enabled. `enableDraco()` and the clone util are lazy-imported — zero cost
+  until used. Animating a rigged model:
+  ```js
+  const { scene, animations } = await assets.loadModel('character.glb');
+  root.add(scene);
+  const mixer = new THREE.AnimationMixer(scene);
+  mixer.clipAction(animations[0]).play();
+  loop.onFrame((t, dt) => mixer.update(dt));
+  ```
 - `debugPanel.js` helpers are composable — add only the folders a project needs,
   or call `gui.add(...)` directly for anything bespoke.
 
@@ -176,8 +189,6 @@ one meaningful commit per step).
 
 Loosely ordered; pick by what unblocks the most.
 
-- **`engine/assets.js`** — GLTF/texture loader wrapper (Promise-based, with a simple
-  cache). The doorway to real rigged models (Mixamo/Blender) instead of primitives.
 - **Shareable build codes** — encode parts + theme + location + period + animation
   into the URL hash so a configured look is a linkable URL (and survives reload).
 - **`engine/state.js`** — small serialize/deserialize for scene config (feeds the
