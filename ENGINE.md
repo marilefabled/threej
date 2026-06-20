@@ -372,7 +372,7 @@ one meaningful commit per step).
 | `5bd8ff6` | **Input + drivable character** — `engine/input.ts` (WASD/gamepad); capsule gains gravity + jump; a "Drive (WASD/Space)" toggle drives the vendor bot via a Idle/Walk/Run/Jump FSM. |
 | `a1f13d6` | **Blend space + smooth facing** — `engine/blendSpace.ts` (1D blend tree); drive locomotion blends Idle/Walk/Run by speed (jump overlaid); facing turns smoothly toward input. |
 | `71f71de` | **Dialogue + cutscene** — `engine/dialogue.ts` (Ink/inkjs wrapper: lines/choices/variables, presentation-agnostic) + `dialogueUI.ts` (DOM box) + `engine/cutscene.ts` (GSAP-backed async director). "Scene" GUI folder plays an intro: camera dollies in, runs a branching conversation, dollies back. |
-| _pending_ | **Dialogue actions + trigger zones** — line tags (`#anim:wave`) dispatch to `dialogue.command()` handlers (robot reacts mid-line); `dialogueUI.ts` typewriter reveal (click completes, click advances); `engine/trigger.ts` (flat XZ zone, edge enter/exit) — driving the character into an NPC ring on the floor starts a conversation (drive freezes while talking). |
+| `01ff536` | **Dialogue actions + trigger zones** — line tags (`#anim:wave`) dispatch to `dialogue.command()` handlers (robot reacts mid-line); `dialogueUI.ts` typewriter reveal (click completes, click advances); `engine/trigger.ts` (flat XZ zone, edge enter/exit) — driving the character into an NPC ring on the floor starts a conversation (drive freezes while talking). |
 
 ---
 
