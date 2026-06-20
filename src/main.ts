@@ -336,9 +336,11 @@ const npcRing = new THREE.Mesh(
 npcRing.rotation.x = -Math.PI / 2;
 npcRing.position.set(npcSpot.x, 0.02, npcSpot.z);
 scene.add(npcRing);
+const talkPrompt = document.getElementById('talk-prompt') as HTMLElement;
 const npcTrigger = createTrigger({
   position: npcSpot, radius: 1.4,
-  onEnter: () => { if (!dialogue.active && !director.active) dialogue.run('yard_npc'); },
+  onEnter: () => { (npcRing.material as any).opacity = 0.95; },   // ring brightens when you're in range
+  onExit: () => { (npcRing.material as any).opacity = 0.5; talkPrompt.hidden = true; },
 });
 
 // A scripted intro: dolly the camera in, run the conversation, dolly back. Runs
@@ -466,6 +468,9 @@ async function loadVendorRobot(entry: any) {
     // ── Drive (WASD/space): you control it — input → capsule, FSM picks clips ──
     if (vendorOpts.drive) {
       npcTrigger.update(model.position);                  // NPC talk zone (edge-triggered)
+      const canTalk = npcTrigger.inside && !dialogue.active && !director.active;
+      talkPrompt.hidden = !canTalk;                        // "press E to talk" while in range
+      if (canTalk && input.consume('KeyE')) { talkPrompt.hidden = true; dialogue.run('yard_npc'); }
       if (dialogue.active || director.active) { vendorBlend?.set(0); return; }  // hold still while talking
       const a = input.axis();
       const running = input.down('ShiftLeft') || input.down('ShiftRight');
@@ -581,7 +586,7 @@ async function setVendorClip(entry: any, name: string) {
     if (vendorJumpAction) { vendorJumpAction.enabled = true; vendorJumpAction.setEffectiveWeight(0); vendorJumpAction.play(); }
     vendorJumpW = 0;
   }
-  function stopDrive() { vendorBlend = null; vendorJumpAction = null; vendorAnimator?.mixer.stopAllAction(); }
+  function stopDrive() { vendorBlend = null; vendorJumpAction = null; vendorAnimator?.mixer.stopAllAction(); talkPrompt.hidden = true; }
 
   const folder = gui.addFolder('Vendor Robot');
   folder.add(pick, 'robot', names).name('Robot').onChange(async () => {

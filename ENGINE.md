@@ -5,7 +5,7 @@
 > how this project is built and where it's going. See the *Update protocol* at the
 > bottom — keeping this current is part of every change, not an afterthought.
 
-**Last updated:** 2026-06-20 (after camera tags + conditional choices)
+**Last updated:** 2026-06-20 (after the talk prompt)
 
 ---
 
@@ -213,7 +213,8 @@ Each is framework-free Three.js and has no dependency on robot/jail content.
 - `trigger.ts`: a flat XZ zone — `update(point)` each frame fires `onEnter`/`onExit`
   on the edges (`once` latches). Reusable for NPC talk zones, doors, checkpoints,
   hazards. The vendor drive demo puts an NPC ring on the floor; driving into it
-  starts a conversation (drive holds still while `dialogue.active`).
+  brightens the ring and shows a "press E to talk" prompt — pressing E starts the
+  conversation (drive holds still while `dialogue.active`).
 - `input.ts`: `axis()` gives a movement vector from WASD/arrows + the gamepad left
   stick (deadzoned, clamped to unit). `down(code)` is held-state; `consume(code)`
   is a one-shot edge read for actions (jump on Space). The full character-control
@@ -380,6 +381,7 @@ one meaningful commit per step).
 | `71f71de` | **Dialogue + cutscene** — `engine/dialogue.ts` (Ink/inkjs wrapper: lines/choices/variables, presentation-agnostic) + `dialogueUI.ts` (DOM box) + `engine/cutscene.ts` (GSAP-backed async director). "Scene" GUI folder plays an intro: camera dollies in, runs a branching conversation, dollies back. |
 | `01ff536` | **Dialogue actions + trigger zones** — line tags (`#anim:wave`) dispatch to `dialogue.command()` handlers (robot reacts mid-line); `dialogueUI.ts` typewriter reveal (click completes, click advances); `engine/trigger.ts` (flat XZ zone, edge enter/exit) — driving the character into an NPC ring on the floor starts a conversation (drive freezes while talking). |
 | `e7c9e91` | **Camera tags + conditional choices** — `#look:NAME` line tag punches the camera to a named framing (reuses `cameraZoom`, no-op mid-cutscene); Ink conditional choices `* { talked } [ … ]` gate options on story state, which now persists across knots (the warden intro changes the yard inmate's choices). |
+| _pending_ | **Talk prompt** — the NPC zone no longer auto-starts; standing in it brightens the ring and shows a "press E to talk" prompt (`#talk-prompt`), and E starts the conversation. Prompt hides while talking / on exit / when drive stops. |
 
 ---
 
