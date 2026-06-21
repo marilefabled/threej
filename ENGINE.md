@@ -403,24 +403,38 @@ These live in `robot/` and `jail/` but are templates worth copying:
 
 ## 6. How to start a new project from the engine
 
+**Option A — copy source** (simplest; get editable engine files):
 1. `npm create vite@latest`, then copy `src/engine/`, `styles.css`, `tsconfig.json`.
 2. `npm i three gsap lil-gui howler @dimforge/rapier3d-compat miniplex inkjs` (+ `-D
    @types/three @types/howler @types/node`).
-3. In `main.ts`:
-   ```ts
-   const { renderer, scene, camera, controls, BASE_CAM } = createScene();
-   addLighting(scene); addEnvironment(scene);
-   const bloom = createBloom(renderer, scene, camera);
-   const loop = createLoop(renderer);
-   loop.onFrame((t, dt) => {/* update your content */});
-   loop.setRender(() => bloom.render());
-   loop.start();
-   ```
-4. Add your own content modules alongside (your `robot/` equivalent), pulling in
-   `createPhysics`/`createAudio`/`createECS` as the game needs them.
 
-Run: `npm install` then `npm run dev`. (`vite.config.ts` reads `PORT` so a host
-can assign the port; it also excludes `rapier3d-compat` from the dep pre-bundle.)
+**Option B — copy the built lib** (after `npm run build:lib` in this repo):
+1. Copy `dist/engine/` into your new project (e.g. `src/engine/`).
+2. Same `npm i` as above — deps are external (not bundled).
+
+Either way, in `main.ts`:
+```ts
+const { renderer, scene, camera, controls, BASE_CAM } = createScene();
+addLighting(scene); addEnvironment(scene);
+const bloom = createBloom(renderer, scene, camera);
+const loop = createLoop(renderer);
+loop.onFrame((t, dt) => {/* update your content */});
+loop.setRender(() => bloom.render());
+loop.start();
+```
+Add your own content modules alongside, pulling in `createPhysics` / `createAudio` /
+`createECS` as the game needs them.
+
+**Build scripts:**
+- `npm run dev` — Vite dev server (HMR).
+- `npm run build` — production app bundle; splits Three / Rapier / GSAP / vendor into
+  separate cacheable chunks. Requires `es2022` target (top-level await for Rapier).
+- `npm run build:lib` — engine-only library build → `dist/engine/*.js` (one file per
+  module, tree-shakable, all deps external). Use this to ship the engine to a new game.
+- `npm run typecheck` — `tsc --noEmit`, must stay at 0 errors before committing.
+
+(`vite.config.ts` reads `PORT` so a host can assign the port; it excludes `rapier3d-compat`
+from the dep pre-bundle since its inlined WASM confuses the bundler.)
 
 ---
 
@@ -525,9 +539,9 @@ one meaningful commit per step).
 | `b62a90f` | **Particles / VFX** — `engine/particles.ts`, a one-draw-call `THREE.Points` pool with procedural soft sprites (no texture), per-particle colour/size, ring-buffer recycling. `burst`/`stream`/`update`. Drive kicks up dust on footfalls/jump/land; a "VFX" GUI folder fires Sparkle/Poof bursts; additive blending glows through bloom. |
 | `d9cb2c1` | **Follow camera** — `engine/followCamera.ts`, a damped third-person cam that trails a target and swings behind it. Camera owners are now a strict hierarchy (director > follow > zoom/orbit); the vendor "Follow cam (3rd person)" toggle auto-enables with Drive for a real game feel. |
 | `36f1a0b` | **Talk prompt** — the NPC zone no longer auto-starts; standing in it brightens the ring and shows a "press E to talk" prompt (`#talk-prompt`), and E starts the conversation. Prompt hides while talking / on exit / when drive stops. |
-| TBD | **Scene manager** — `engine/sceneManager.ts` (`createSceneManager`): named scenes `{ enter, update, exit }` + cross-fade transitions (DOM overlay, configurable color/duration). Overlay starts opaque for a "boot reveal"; first `go()` enters and fades out; subsequent calls fade dark → swap → reveal. Demo: `title` scene (full-screen THREEJ card, Enter/click → game) + `game` scene (existing content). GUI "↩ Main menu" + `window.threej.scenes`. |
+| `aea05e0` | **Scene manager** — `engine/sceneManager.ts` (`createSceneManager`): named scenes `{ enter, update, exit }` + cross-fade transitions (DOM overlay, configurable color/duration). Overlay starts opaque for a "boot reveal"; first `go()` enters and fades out; subsequent calls fade dark → swap → reveal. Demo: `title` scene (full-screen THREEJ card, Enter/click → game) + `game` scene (existing content). GUI "↩ Main menu" + `window.threej.scenes`. |
 | `c58d6a5` | **Events / Timer / Camera shake** — three universal boilerplate modules. `engine/events.ts` (`createEvents<Schema>`): typed pub/sub bus; `on/once/off/emit/clear/count`; handler errors isolated per listener; `on()` returns an unsubscribe fn. `engine/timer.ts` (`createTimers`): loop-dt-based `after/every/tween` timers (pause with the loop; `every` handles large-dt missed intervals; `tween` drives a 0→1 progress with optional easing). `engine/shake.ts` (`createShake`): trauma-model camera shake (`addTrauma`, decays per frame at `trauma²` magnitude, camera-local right/up/roll offset, call LAST in camera callback). Demo: jump/land emit `player:jump`/`player:land` + add trauma; VFX folder has Shake light/medium/heavy + a "Timer: escalating shakes" button; `loadLevel` emits `level:change`; save toast uses `timer.after` instead of `setTimeout`. All three on `window.threej`. |
-| TBD | **Object pool / Raycaster / Spatial audio** — `engine/pool.ts` (`createPool<T>`): generic pre-warmed pool, zero allocations on hot path, `acquire/release/releaseAll/forEach`, grows with warning if exhausted. `engine/raycast.ts` (`createRaycaster`): drag-safe click-on-3D; `pick/pickAll/pickNDC`; `onClick/onHover` attach persistent listeners and return cleanup fns. `audio.ts` extended: `play3D(name, pos, opts)` positions sound via Howler's PannerNode; `setListener(pos, fwd, up)` syncs the Web Audio listener to the camera each frame. Demo: clicking the static robot (raycaster + recursive pick) fires blip + shake + sparkle at hit point; physics prop `thud` is now `play3D`; "Pool: orb burst" VFX button fires 5 pre-allocated orbs in a ring, released after 1.5 s; `orbPool` and `raycast` on `window.threej`. |
+| `d0466f6` | **Object pool / Raycaster / Spatial audio** — `engine/pool.ts` (`createPool<T>`): generic pre-warmed pool, zero allocations on hot path, `acquire/release/releaseAll/forEach`, grows with warning if exhausted. `engine/raycast.ts` (`createRaycaster`): drag-safe click-on-3D; `pick/pickAll/pickNDC`; `onClick/onHover` attach persistent listeners and return cleanup fns. `audio.ts` extended: `play3D(name, pos, opts)` positions sound via Howler's PannerNode; `setListener(pos, fwd, up)` syncs the Web Audio listener to the camera each frame. Demo: clicking the static robot (raycaster + recursive pick) fires blip + shake + sparkle at hit point; physics prop `thud` is now `play3D`; "Pool: orb burst" VFX button fires 5 pre-allocated orbs in a ring, released after 1.5 s; `orbPool` and `raycast` on `window.threej`. |
 
 ---
 
@@ -537,10 +551,10 @@ Loosely ordered; pick by what unblocks the most.
 
 - **`engine/postfx.ts` growth** — vignette + color-grade passes. The pmndrs
   `postprocessing` lib is the upgrade path beyond `three/addons`.
-- **Spatial/3D audio** — Howler has built-in positional audio; wire
-  `audio.setListener(camera)` + `play3D(name, worldPos)`. Makes ambient scenes alive.
+- **Spatial/3D audio** ✓ done — `play3D` + `setListener` wired, listener syncs to camera each frame.
 - **`engine/pool.ts`** ✓ done — generic pre-warmed pool, `acquire/release/forEach`.
 - **`engine/raycast.ts`** ✓ done — drag-safe `pick/onClick/onHover`.
+- **Dist pipeline** ✓ done — `npm run build` (chunk-split app: Three/Rapier/GSAP/vendor separate); `npm run build:lib` (tree-shakable `dist/engine/*.js`, all deps external). `src/engine/index.ts` barrel for single-import convenience. See §6.
 - **GSAP timeline helpers in `engine/`** — reusable entrance/transition tweens.
 - **Tighten TypeScript** — replace the migration's `: any` option-bags with real
   interfaces, module by module.
