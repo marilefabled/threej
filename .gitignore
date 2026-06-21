@@ -1,6 +1,11 @@
 # deps / build
 node_modules/
 dist/
+dist-electron/
+
+# Capacitor native projects (generated; run `npx cap add ios|android` to create)
+ios/
+android/
 
 # macOS
 .DS_Store
